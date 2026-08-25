@@ -102,10 +102,6 @@ class Ball:
             if self.position.y + self.radius >= HEIGHT:
                 self.reset(paddle)
 
-            if self.rect.colliderect(paddle.rect):
-                self.position.y = paddle.rect.top - self.radius
-                self.velocity.y *= -1
-
         self.rect.center = (round(self.position.x), round(self.position.y))
 
     def draw(self, surface):
@@ -134,6 +130,42 @@ def create_bricks():
             bricks.append(brick)
 
     return bricks
+
+
+def bounce_from_rect(ball, target_rect):
+    """找出重疊最少的一側，決定反轉水平或垂直速度。"""
+    overlaps = {
+        "left": ball.rect.right - target_rect.left,
+        "right": target_rect.right - ball.rect.left,
+        "top": ball.rect.bottom - target_rect.top,
+        "bottom": target_rect.bottom - ball.rect.top,
+    }
+    collision_side = min(
+        overlaps, key=overlaps.get
+    )  # overlaps是要比較的東西(這裡是字典)，key=overlaps.get是要比較的方式(把值抓出，做比較)，這裡是比較overlaps這個字典裡的所有的值
+    # 這行=min(overlaps.get(left), overlaps.get(right), overlaps.get(top), overlaps.get(bottom))，回傳最小的那個key
+    if collision_side in ["left", "right"]:
+        ball.velocity.x *= -1
+    else:
+        ball.velocity.y *= -1
+
+
+def handle_collision(ball, paddle, bricks):
+    # 碰撞處理三步驟:找到、改狀態、改方向。
+    # 檢查底板碰撞
+    if ball.velocity.y > 0 and ball.rect.colliderect(paddle.rect):
+        ball.rect.bottom = paddle.rect.top
+        ball.position.y = ball.rect.centery
+        ball.velocity.y = -abs(ball.velocity.y)  # 這個=ball.velocity.y *= -1
+
+        offset = (ball.rect.centerx - paddle.rect.centerx) / (paddle.rect.width / 2)
+        ball.velocity.x = offset * 6
+        # 檢查磚塊碰撞
+    for brick in bricks:
+        if brick.alive and ball.rect.colliderect(brick.rect):
+            brick.alive = False
+            bounce_from_rect(ball, brick.rect)
+            break  # 只處理一個磚塊碰撞
 
 
 #########################磚塊#########################
@@ -165,6 +197,7 @@ while running:
     keys = pg.key.get_pressed()
     paddle.update(keys)
     ball.update(paddle)
+    handle_collision(ball, paddle, bricks)
 
     # 清除畫面
     screen.fill(BACKGROUND_COLOR)
