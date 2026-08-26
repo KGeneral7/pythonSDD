@@ -1,0 +1,2 @@
+# Pygame supplies the desktop window, input events, geometry drawing and clock.
+pygame>=2.5,<3
