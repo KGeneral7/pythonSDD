@@ -1,4 +1,6 @@
 #########################匯入模組#########################
+import random
+
 import pygame as pg
 
 #########################遊戲基本設定#########################
@@ -15,6 +17,11 @@ BRICK_SCORE = 10
 SURVIVAL_SECONDS = 300
 SURVIVAL_TIME = SURVIVAL_SECONDS * 1000
 
+PADDLE_WIDTH = 120
+PADDLE_HEIGHT = 16
+LONG_PADDLE_WIDTH = 200
+LONG_PADDLE_DURATION = 8000
+
 BRICK_WIDTH = 72
 BRICK_HEIGHT = 24
 BRICK_PADDING = 8
@@ -23,10 +30,15 @@ BRICK_COLS = 9
 BRICK_START_X = 44
 BRICK_START_Y = 70
 BRICK_ROW_STEP = BRICK_HEIGHT + BRICK_PADDING
+BRICK_COLUMN_STEP = BRICK_WIDTH + BRICK_PADDING
 
 INITIAL_SPAWN_INTERVAL = 10000
 SPAWN_INTERVAL_DECREASE = 1000
 MIN_SPAWN_INTERVAL = 5000
+
+SPECIAL_BRICK_CHANCE = 0.05
+LONG_PADDLE_BRICK_COLOR = (34, 197, 94)
+EXPLOSIVE_BRICK_COLOR = (239, 68, 68)
 
 BRICK_COLORS = [
     (244, 114, 182),  # 粉紅色
@@ -47,16 +59,24 @@ clock = pg.time.Clock()
 # 新指令：pg.font.Font會建立字型物件，None代表使用Pygame預設字型。
 font = pg.font.Font(None, 28)
 title_font = pg.font.Font(None, 54)
+brick_label_font = pg.font.Font(None, 22)
 
 
 #########################物件類別#########################
 class Brick:
-    """磚塊會保存自己的位置、顏色與是否存在"""
+    """磚塊會保存自己的位置、顏色、類型與是否存在"""
 
-    def __init__(self, x, y, width, height, color):
+    def __init__(self, x, y, width, height, color, kind="normal"):
         self.rect = pg.Rect(x, y, width, height)
-        self.color = color
+        self.kind = kind
         self.alive = True
+
+        if kind == "long_paddle":
+            self.color = LONG_PADDLE_BRICK_COLOR
+        elif kind == "explosive":
+            self.color = EXPLOSIVE_BRICK_COLOR
+        else:
+            self.color = color
 
     def draw(self, surface):
         """繪製磚塊"""
@@ -65,12 +85,26 @@ class Brick:
                 surface, self.color, self.rect, border_radius=5
             )  # border_radius是調方塊的角用
 
+            if self.kind == "long_paddle":
+                label = "L"
+            elif self.kind == "explosive":
+                label = "B"
+            else:
+                label = None
+
+            if label is not None:
+                label_surface = brick_label_font.render(label, True, TEXT_COLOR)
+                # 新指令：get_rect取得文字範圍，center讓文字置中於方塊。
+                label_rect = label_surface.get_rect(center=self.rect.center)
+                surface.blit(label_surface, label_rect)
+
 
 class Paddle:
     def __init__(self):
-        self.rect = pg.Rect(0, 0, 120, 16)
+        self.rect = pg.Rect(0, 0, PADDLE_WIDTH, PADDLE_HEIGHT)
         self.rect.midbottom = (WIDTH // 2, HEIGHT - 34)
         self.speed = 8
+        self.long_paddle_time = 0
 
     def update(self, keys):
         direction = 0
@@ -81,6 +115,27 @@ class Paddle:
 
         self.rect.x += direction * self.speed
         self.rect.x = max(0, min(self.rect.x, WIDTH - self.rect.width))
+
+    def activate_long_paddle(self):
+        """啟動長底板，重複取得時延長8秒。"""
+        self.long_paddle_time += LONG_PADDLE_DURATION
+        center_x = self.rect.centerx
+        self.rect.width = LONG_PADDLE_WIDTH
+        self.rect.centerx = center_x
+        self.rect.x = max(0, min(self.rect.x, WIDTH - self.rect.width))
+
+    def update_powerup(self, elapsed_time, ball_is_moving):
+        """只有球移動時才倒數長底板效果。"""
+        if self.long_paddle_time <= 0 or not ball_is_moving:
+            return
+
+        self.long_paddle_time -= elapsed_time
+        if self.long_paddle_time <= 0:
+            self.long_paddle_time = 0
+            center_x = self.rect.centerx
+            self.rect.width = PADDLE_WIDTH
+            self.rect.centerx = center_x
+            self.rect.x = max(0, min(self.rect.x, WIDTH - self.rect.width))
 
     def draw(self, surface):
         pg.draw.rect(surface, PADDLE_COLOR, self.rect, border_radius=8)
@@ -164,14 +219,41 @@ def draw_end_screen(surface, game_state, score):
     draw_text(surface, font, "Press ESC to Quit", (WIDTH // 2 - 115, 390))
 
 
+def choose_brick_kind():
+    """依照90%、5%、5%的比例選擇方塊類型。"""
+    # 新指令：random.random會產生0到1之間的隨機小數。
+    roll = random.random()
+    if roll < SPECIAL_BRICK_CHANCE:
+        return "long_paddle"
+    elif roll < SPECIAL_BRICK_CHANCE * 2:
+        return "explosive"
+    return "normal"
+
+
 def create_brick_row(y, row_index):
-    """建立一整排方塊，並依列數循環使用方塊顏色。"""
+    """建立一整排方塊，同種類特殊磚每排最多出現一個。"""
     row_bricks = []
+    used_special_kinds = []
     color_index = row_index % len(BRICK_COLORS)
 
     for col in range(BRICK_COLS):
         x = BRICK_START_X + col * (BRICK_WIDTH + BRICK_PADDING)
-        brick = Brick(x, y, BRICK_WIDTH, BRICK_HEIGHT, BRICK_COLORS[color_index])
+        kind = choose_brick_kind()
+
+        if kind != "normal":
+            if kind in used_special_kinds:
+                kind = "normal"
+            else:
+                used_special_kinds.append(kind)
+
+        brick = Brick(
+            x,
+            y,
+            BRICK_WIDTH,
+            BRICK_HEIGHT,
+            BRICK_COLORS[color_index],
+            kind,
+        )
         row_bricks.append(brick)
 
     return row_bricks
@@ -209,6 +291,24 @@ def bricks_reached_paddle(bricks, paddle):
     return False
 
 
+def explode_nearby_bricks(exploded_brick, bricks):
+    """炸掉爆炸磚周圍8格內的活方塊，並回傳炸掉的數量。"""
+    destroyed_count = 0
+
+    for brick in bricks:
+        if brick.alive and brick != exploded_brick:
+            distance_x = abs(brick.rect.centerx - exploded_brick.rect.centerx)
+            distance_y = abs(brick.rect.centery - exploded_brick.rect.centery)
+            if (
+                distance_x <= BRICK_COLUMN_STEP
+                and distance_y <= BRICK_ROW_STEP
+            ):
+                brick.alive = False
+                destroyed_count += 1
+
+    return destroyed_count
+
+
 def bounce_from_rect(ball, target_rect):
     """找出重疊最少的一側，決定反轉水平或垂直速度。"""
     overlaps = {
@@ -238,16 +338,16 @@ def handle_collision(ball, paddle, bricks):
         offset = (ball.rect.centerx - paddle.rect.centerx) / (paddle.rect.width / 2)
         ball.velocity.x = offset * 6
 
-    brick_hit = False
+    hit_brick = None
     # 檢查磚塊碰撞
     for brick in bricks:
         if brick.alive and ball.rect.colliderect(brick.rect):
             brick.alive = False
-            brick_hit = True
+            hit_brick = brick
             bounce_from_rect(ball, brick.rect)
             break  # 只處理一個磚塊碰撞
 
-    return brick_hit
+    return hit_brick
 
 
 #########################磚塊#########################
@@ -322,6 +422,8 @@ while running:
             game_state = "game_over"
 
         if game_state == "playing":
+            paddle.update_powerup(elapsed_time, ball.launched)
+
             # 取得按鍵狀態
             keys = pg.key.get_pressed()
             paddle.update(keys)
@@ -334,8 +436,17 @@ while running:
                 game_state = "game_over"
 
         if game_state == "playing":
-            if handle_collision(ball, paddle, bricks):
+            hit_brick = handle_collision(ball, paddle, bricks)
+
+            if hit_brick is not None:
                 score += BRICK_SCORE
+
+                if hit_brick.kind == "long_paddle":
+                    paddle.activate_long_paddle()
+                elif hit_brick.kind == "explosive":
+                    destroyed_count = explode_nearby_bricks(hit_brick, bricks)
+                    score += destroyed_count * BRICK_SCORE
+
                 if all_bricks_destroyed(bricks):
                     game_state = "win"
 
