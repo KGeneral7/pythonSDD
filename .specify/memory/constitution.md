@@ -1,0 +1,91 @@
+<!--
+Sync Impact Report
+- Version change: unratified template -> 1.0.0
+- Modified principles: five placeholder principles replaced with learning-oriented rules
+- Added sections: Learning and Technical Constraints; Development Workflow
+- Removed sections: placeholder-only scaffold guidance
+- Deferred TODOs: none; 2026-08-26 is the initial adoption date
+- Capability basis: day1/day2 demonstrate functions, classes, Pygame event loops,
+  movement bounds, collision handling, game states, timers, random behavior,
+  power-ups, and multiple balls. The project does not yet use automated tests
+  or separated modules, so the rules introduce those practices gradually.
+-->
+
+# pythonSDD Constitution
+
+## Core Principles
+
+### I. 小步驟、可執行的學習
+每次功能變更 MUST 聚焦在一個可以觀察的行為，並在完成該小步驟後執行程式確認結果。
+較大的功能 MUST 拆成可獨立執行的階段；每一階段都要保留可執行的版本，不得一次加入
+無法定位問題的大量改動。理由：目前專案是透過 day1 到 day2 的連續練習累積能力，
+小步驟能讓每次結果都能和已知行為比較。
+
+### II. 先理解再自動化
+AI 產生或修改的程式碼 MUST 能用簡單語言說明其目的、輸入、狀態變化與輸出；遇到
+尚未熟悉的技術，MUST 先形成簡短的規格與實作計畫，再開始撰寫程式。不可接受只因為
+程式能執行就保留無法解釋的邏輯；關鍵公式、碰撞判斷、座標限制與新的 API MUST 留下
+必要的註解或說明。理由：AI 是學習與實作的協作者，不應取代對程式流程的理解。
+
+### III. 用清楚的 Python 基礎承載功能
+新程式 MUST 優先使用目前已能掌握的 Python 基礎：函式負責單一明確工作，類別負責
+保存狀態與相關行為，設定值集中為常數，命名使用 `snake_case`、`PascalCase` 與全大寫
+常數。除非能說明帶來的好處，MUST NOT 引入複雜抽象、過度縮寫或難以閱讀的一行式寫法。
+新修改的識別字 MUST 使用正確且一致的拼字；歷史練習檔可保留原貌，不要求為了格式而
+全面重寫。理由：現有程式已從函式進展到多個遊戲物件，下一步是穩定可讀性，而不是
+提早引入大型架構。
+
+### IV. 以資料、狀態與邊界描述互動行為
+互動程式 MUST 明確區分輸入、更新、繪製，以及物件資料與遊戲狀態。位置、尺寸、速度、
+時間與分數 MUST 使用有意義的名稱或常數；邊界限制、碰撞修正與勝負轉換 MUST 在程式中
+有可追蹤的判斷。使用 `min`、`max`、`pygame.Rect` 或 `Vector2` 時，MUST 能說明它們
+保護的範圍與座標意義。理由：目前的打磚塊程式已經包含底板、球、磚塊、生命與特殊效果，
+清楚的資料流能避免新增功能時互相影響。
+
+### V. 每個功能都要被驗證
+每個可見行為的變更 MUST 至少有一個可重複的手動驗證情境，例如啟動、操作、碰撞、
+失敗、勝利或重新開始；純函式與計算邏輯 SHOULD 在合理時加入簡單的 `assert` 或測試。
+若暫時沒有自動化測試，實作計畫或註解 MUST 記錄手動驗證方式與尚未涵蓋的情況。完成
+標準是程式能啟動、主要情境符合預期，且沒有因新功能破壞既有操作。理由：目前以 Pygame
+畫面為主，先建立低門檻的重複驗證，再逐步增加自動化測試。
+
+## Learning and Technical Constraints
+
+- 專案以 Python 3.11 或更新版本為基準；目前的互動練習以 Pygame 為主要框架。
+- 新增套件 MUST 安裝在專案的虛擬環境，不得依賴全域安裝；並在規格、計畫或專案筆記中
+  記錄套件用途與安裝方式。
+- 練習檔可以先維持單檔，避免為了形式過早拆分；當檔案或功能已難以理解時，才依照
+  明確責任拆成函式、模組或類別。
+- 註解 MUST 優先解釋「為什麼」與不直觀的計算，不重複逐字描述程式碼；新接觸的 API
+  可以用一兩句中文說明其用途。
+- 新功能 MUST 保留既有功能，除非規格明確要求改變；修正錯誤時要指出受影響的行為，
+  不把無關的全面重構混入同一次變更。
+
+## Development Workflow
+
+1. 先用一段話描述使用者看得到的目標與完成條件；小型修正可以直接開始，非小型功能
+   MUST 使用 `$speckit-specify` 建立規格。
+2. 在 `$speckit-plan` 或簡短計畫中列出資料、狀態、函式或類別責任、重要公式，以及
+   預計的手動驗證情境；計畫內容 MUST 使用目前能理解的語言。
+3. 使用 `$speckit-tasks` 將工作拆成順序明確的小任務，逐項實作並在每項後執行程式。
+4. 完成後依照驗證情境測試正常流程、邊界條件與失敗或重新開始流程；遇到問題先記錄
+   實際結果，再修改最相關的邏輯。
+5. 對新增的陌生概念進行簡短回顧：能說明它解決的問題、輸入輸出與限制後，才視為已
+   完成學習；需要時使用 `$speckit-converge` 檢查規格、計畫、任務與程式是否一致。
+
+## Governance
+
+本憲章是本專案在學習、設計、實作與驗證時的最高指導文件。若為了學習實驗或特殊限制
+需要暫時違反規則，MUST 在規格、計畫或筆記中寫明原因、影響與日後是否要補回；例外不
+得默默發生。
+
+修改憲章時 MUST 只更新本檔案，並在檔案開頭的 Sync Impact Report 說明版本變更、修改
+內容、移除或新增的原則，以及待處理事項。版本遵循語意化版本：移除或重新定義既有規則
+時增加 MAJOR；新增原則或大幅擴充治理內容時增加 MINOR；只有澄清文字、修正錯字或不
+改變規則的整理時增加 PATCH。
+
+每個非小型功能的規格與計畫 MUST 指出適用的核心原則；完成實作前 MUST 依照第五項原則
+執行驗證。憲章的遵循檢查以可執行、可理解與已驗證為準，不以大型專案的工具數量或架構
+複雜度作為品質標準。
+
+**Version**: 1.0.0 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-08-26
