@@ -47,11 +47,11 @@
 | IV. 以資料、狀態與邊界描述互動行為 | 以 WorldRect、ObstacleState、BushState、TerrainHitResult、TerrainInteraction、前後位置和雙戰鬥計時器明確表示輸入/更新/碰撞/繪製邊界 | 通過 |
 | V. 每個功能都要被驗證 | 新增地形、恢復、可見性與渲染測試，並在 quickstart 提供牆角、牆後目標、破壞、多視角、5 秒門檻與重開手動驗證 | 通過 |
 | VI. SDD 文件語言一致性 | 本功能的 spec.md、plan.md、research.md、data-model.md、quickstart.md 與 tasks.md 均使用繁體中文；程式識別字和命令保留原始拼寫 | 通過 |
-| VII. 依 Spec Kit 管理分支與 PR 生命週期 | 功能目錄、文件與本次交付分支使用 004-obstacles-breach-bushes；003 的散彈修正列為相容性補充，外部生命週期由 PR #4、v0.2.0 與本次文件同步收尾 | 已符合；PR #4 已合併並發布，分支清理待文件同步 PR 完成 |
+| VII. 依 Spec Kit 管理分支與 PR 生命週期 | 功能目錄、文件與本次交付分支使用 004-obstacles-breach-bushes；003 的散彈修正列為相容性補充，外部生命週期由 PR #4、v0.2.0 與文件同步 PR #5 收尾 | 交付、文件同步與遠端分支清理已完成；本地兩個 squash 後非 ancestry 分支經一般 `git branch -d` 檢查遭拒，依規範未使用 `-D`，故保留並記錄 |
 
 ### 設計門檻結論
 
-設計門檻通過。T002 已確認既有工作內容保留，T031～T035 的本地驗證已完成；本次以 `codex/004-obstacles-breach-bushes` 作為交付分支，PR #4 已完成合併並發布 v0.2.0，文件同步後依憲章完成分支清理，不修改或重置 `day3/` 等未納入檔案。
+設計門檻通過。T002 已確認既有工作內容保留，T031～T035 的本地驗證已完成；本次以 `codex/004-obstacles-breach-bushes` 作為交付分支，PR #4 已完成合併並發布 v0.2.0，文件同步 PR #5 亦已合併。三個遠端開發分支已刪除；本地 `codex/004-obstacles-breach-bushes` 與 `codex/docs-v0.2.0-release` 因 squash 後提交不在 `main` ancestry，經一般 `git branch -d` 安全檢查遭拒，依規範保留，不修改或重置 `day3/` 等未納入檔案。
 
 ## 專案結構
 

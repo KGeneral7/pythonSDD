@@ -136,7 +136,7 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 - [x] T033 執行 `git diff --check` 檢查程式與測試變更空白；並檢閱 `terrain.py`、`world.py`、`rendering.py` 的匯入方向與 `requirements.txt`，確認無循環依賴或新增外部服務/套件。
 - [x] T034 依 `specs/004-obstacles-breach-bushes/quickstart.md` 以 `SDL_VIDEODRIVER=dummy` 啟動 `pvpve_escape.main.run()` 並注入單次 QUIT 完成入口端到端煙霧驗收；互動視覺清單保留供桌面使用者確認。
 - [x] T035 依 `pvpve_escape/__main__.py` 等價的正式更新/繪製鏈，在 1280×720、6 名玩家、12 隻怪物與 45 個固定地形物件場景中預熱 60 幀後量測 600 幀；3.4837 秒完成，平均 172.23 FPS，高於 55 FPS。
-- [x] T036 在 `specs/004-obstacles-breach-bushes/quickstart.md` 記錄驗證結果後，已將 `codex/004-obstacles-breach-bushes` 推送遠端並建立指向本功能文件的非 draft [PR #4](https://github.com/KGeneral7/pythonSDD/pull/4)，確認最新 head 可合併；PR #4 已以 `2f3383f` 合併至 `main`，並建立 `v0.2.0` annotated tag 與[正式 release](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0)。本次文件同步完成後依憲章清理遠端與本地功能分支；專案未配置 GitHub Actions，故以本機驗證與 GitHub 可合併狀態作為檢查結果。
+- [ ] T036 在 `specs/004-obstacles-breach-bushes/quickstart.md` 記錄驗證結果後，已將 `codex/004-obstacles-breach-bushes` 推送遠端並建立指向本功能文件的非 draft [PR #4](https://github.com/KGeneral7/pythonSDD/pull/4)，確認最新 head 可合併；PR #4 已以 `2f3383f` 合併至 `main`，並建立 `v0.2.0` annotated tag 與[正式 release](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0)，文件同步 [PR #5](https://github.com/KGeneral7/pythonSDD/pull/5) 亦已合併。三個遠端開發分支已刪除，但本地 `codex/004-obstacles-breach-bushes` 與 `codex/docs-v0.2.0-release` 經一般 `git branch -d` 檢查因 squash 後非 `main` ancestry 而遭拒；依規範未使用 `-D`，故本地分支清理仍待安全處理。專案未配置 GitHub Actions，故以本機驗證與 GitHub 可合併狀態作為檢查結果。
 
 ---
 
@@ -191,4 +191,4 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 - 每個使用者故事的測試先於實作建立，並在實作前確認會失敗。
 - `pvpve_escape/tests` 的新增測試、既有測試、`compileall`、`git diff --check` 與 `quickstart.md` 手動情境均有結果記錄。
 - 不新增 Pygame 以外依賴，不建立外部 API/服務，不覆蓋現有未提交工作變更。
-- T002 的工作樹保留與 T035 的效能門檻已完成並留下可追蹤記錄；原始 PR #3／`v0.1.0` 為既有基線，T036 的本次 PR、release 與合併已完成，文件同步 PR 合併後即完成分支清理。
+- T002 的工作樹保留與 T035 的效能門檻已完成並留下可追蹤記錄；原始 PR #3／`v0.1.0` 為既有基線，T036 的本次 PR、release、合併與文件同步已完成，遠端分支亦已清理；本地兩個 squash 後非 ancestry 分支因一般 `git branch -d` 安全檢查遭拒而保留，未以 `-D` 繞過檢查，因此不能宣稱本地分支生命週期已完成。
