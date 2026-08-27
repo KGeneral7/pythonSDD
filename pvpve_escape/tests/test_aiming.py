@@ -1,0 +1,106 @@
+"""瞄準預覽幾何的純規則測試。"""
+
+import unittest
+
+from pvpve_escape.aiming import build_aim_guide, clamp_aim_endpoint
+from pvpve_escape.models import CharacterId, TacticalId, Vector2
+from pvpve_escape.world import create_match
+
+
+class AimGuideGeometryTests(unittest.TestCase):
+    def test_endpoint_is_limited_to_the_world_boundary(self) -> None:
+        endpoint = clamp_aim_endpoint(Vector2(2380, 700), Vector2(1, 0), 1000)
+
+        self.assertEqual(endpoint.tuple(), (2400.0, 700.0))
+
+    def test_primary_guides_use_the_character_specific_geometry(self) -> None:
+        expected = {
+            CharacterId.BREACHER: ("wedge", 200.0, 60.0),
+            CharacterId.SNIPER: ("line", 1000.0, 0.0),
+            CharacterId.GUARDIAN: ("wedge", 125.0, 100.0),
+            CharacterId.HUNTER: ("path", 340.0, 0.0),
+            CharacterId.CONTROLLER: ("circle", 460.0, 0.0),
+            CharacterId.SIPHONER: ("beam", 280.0, 0.0),
+        }
+
+        for role, (shape, range_distance, angle) in expected.items():
+            player = create_match(role).players[0]
+            guide = build_aim_guide(player, "primary", Vector2(1, 0))
+
+            self.assertEqual(guide.shape, shape, role)
+            self.assertEqual(guide.range, range_distance, role)
+            self.assertEqual(guide.angle_degrees, angle, role)
+            self.assertTrue(guide.valid, role)
+            self.assertEqual(guide.direction.tuple(), (1.0, 0.0), role)
+
+        self.assertEqual(
+            len(build_aim_guide(create_match(CharacterId.BREACHER).players[0], "primary", Vector2(1, 0)).path_points),
+            5,
+        )
+        self.assertGreaterEqual(
+            len(build_aim_guide(create_match(CharacterId.HUNTER).players[0], "primary", Vector2(1, 0)).path_points),
+            3,
+        )
+
+    def test_ultimate_and_tactical_guides_share_the_same_boundary_rule(self) -> None:
+        match = create_match(CharacterId.CONTROLLER, TacticalId.CONTROL)
+        player = match.players[0]
+        player.position = Vector2(2380, 700)
+
+        ultimate = build_aim_guide(player, "ultimate", Vector2(1, 0))
+        tactical = build_aim_guide(player, "tactical", Vector2(1, 0))
+
+        self.assertLessEqual(ultimate.end.x, 2400.0)
+        self.assertLessEqual(tactical.end.x, 2400.0)
+        self.assertEqual(tactical.radius, 100.0)
+        self.assertEqual(tactical.shape, "circle")
+
+    def test_ultimate_guides_describe_each_role_specific_shape(self) -> None:
+        expected = {
+            CharacterId.BREACHER: ("circle", 0.0, 190.0),
+            CharacterId.SNIPER: ("line", 1100.0, 0.0),
+            CharacterId.GUARDIAN: ("circle", 0.0, 38.0),
+            CharacterId.HUNTER: ("path", 360.0, 0.0),
+            CharacterId.CONTROLLER: ("circle", 0.0, 190.0),
+            CharacterId.SIPHONER: ("circle", 0.0, 220.0),
+        }
+        for role, (shape, range_distance, radius) in expected.items():
+            guide = build_aim_guide(create_match(role).players[0], "ultimate", Vector2(1, 0))
+            self.assertEqual(guide.shape, shape, role)
+            self.assertEqual(guide.range, range_distance, role)
+            self.assertEqual(guide.radius, radius, role)
+            if role == CharacterId.HUNTER:
+                self.assertEqual(len(guide.path_points), 2)
+
+    def test_tactical_guides_expose_dash_shield_and_bounded_control(self) -> None:
+        expected = {
+            TacticalId.DASH: ("path", 220.0, 0.0),
+            TacticalId.SHIELD: ("circle", 0.0, 36.0),
+            TacticalId.CONTROL: ("circle", 100.0, 100.0),
+        }
+        for tactical, (shape, range_distance, radius) in expected.items():
+            match = create_match(CharacterId.CONTROLLER, tactical)
+            player = match.players[0]
+            player.position = Vector2(2380, 700)
+            guide = build_aim_guide(player, "tactical", Vector2(1, 0))
+            self.assertEqual(guide.shape, shape, tactical)
+            self.assertEqual(guide.range, range_distance, tactical)
+            self.assertEqual(guide.radius, radius, tactical)
+            self.assertLessEqual(guide.end.x, 2400.0, tactical)
+            self.assertGreaterEqual(guide.end.x, 0.0, tactical)
+            self.assertTrue(all(0.0 <= point.x <= 2400.0 for point in guide.path_points), tactical)
+
+    def test_guides_are_read_only_and_invalid_resources_only_change_color_state(self) -> None:
+        player = create_match(CharacterId.SNIPER).players[0]
+        player.aim_direction = Vector2(0, 1)
+        before = player.position.tuple()
+        guide = build_aim_guide(player, "primary", Vector2(), valid=False)
+
+        self.assertFalse(guide.valid)
+        self.assertEqual(guide.direction.tuple(), (0.0, 1.0))
+        self.assertEqual(player.position.tuple(), before)
+        self.assertEqual(player.aim_direction.tuple(), (0.0, 1.0))
+
+
+if __name__ == "__main__":
+    unittest.main()
