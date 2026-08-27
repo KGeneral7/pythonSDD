@@ -4,11 +4,11 @@
 
 **預定功能分支**：`codex/005-gameplay-monsters-auto-aim`
 
-**本次交付分支**：`codex/003-combat-vfx-cone-ammo`（與 003、004 的已驗證跨檔案變更整合於同一 PR）
+**原始交付分支**：`codex/003-combat-vfx-cone-ammo`（與 003、004 的已驗證跨檔案變更整合於原始 PR）
 
 **建立日期**：2026-08-27
 
-**狀態**：已實作（[PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 已建立並將合併，發布標籤為 `v0.1.0`）
+**狀態**：已實作（[PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 已合併，發布標籤為 `v0.1.0`）
 
 **輸入**：使用者需求：「加入遊戲介紹頁面、多種怪物、自動瞄準，並降低所有角色子彈速度；自動瞄準只瞄準玩家前 0.2 秒的位置，數值要可更改。」
 

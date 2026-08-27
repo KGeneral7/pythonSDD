@@ -1,4 +1,4 @@
-# 任務：戰鬥特效、全扇形判定與彈藥節奏
+# 任務：戰鬥特效、五散彈命中與彈藥節奏
 
 **功能識別字**：`003-combat-vfx-cone-ammo`
 **功能分支**：`codex/003-combat-vfx-cone-ammo`
@@ -23,7 +23,7 @@
 
 **⚠️ 關鍵檢查點**：完成後才可平行處理各使用者故事。
 
-- [X] T004 [P] 在 `pvpve_escape/models.py` 擴充 `AbilityEffect` 的 `origin`、前後位置、移動距離、命中結果與 metadata 相容欄位，將 `hit_target_ids` 固定為 `set[tuple[str, int]]`，並為破陣者建立 `metadata["pellet_hits"]` 的每目標 pellet index 結構，明確區分權威規則效果與 `visual_only` 效果，且不破壞既有 dataclass 建構呼叫。
+- [X] T004 [P] 在 `pvpve_escape/models.py` 擴充 `AbilityEffect` 的 `origin`、前後位置、移動距離、命中結果與 metadata 相容欄位，將 `hit_target_ids` 固定為 `set[tuple[str, int]]`，讓每個破陣者 `breach_pellet` effect 保存自己的命中集合，明確區分權威規則效果與 `visual_only` 效果，且不破壞既有 dataclass 建構呼叫。
 - [X] T005 [P] 在 `pvpve_escape/config.py` 集中新增戰鬥特效所需的角色／技能色彩、扇形角度／距離、投射物半徑與共用幾何常數，避免 `world.py` 與 `rendering.py` 各自寫死不同數值。
 - [X] T006 在 `pvpve_escape/world.py` 與 `pvpve_escape/rules.py` 整理 effect 建立、連續路徑、命中事件與過期清理的共用流程；確保 `visual_only` effect 只更新位置／壽命，不會呼叫傷害、控制或大招能量邏輯。
 
@@ -54,26 +54,26 @@
 
 ---
 
-## 階段 4：使用者故事 2－讓破陣者的整個弧形都能命中（優先級：P1）
+## 階段 4：使用者故事 2－讓破陣者依散彈命中數計傷（優先級：P1）
 
-**故事目標**：破陣者使用與瞄準預覽一致的完整 60°、最大 200 距離扇形；扇形內每個目標最多接受五顆散射彈各一次傷害，五條視覺軌跡不再另行造成傷害。
+**故事目標**：破陣者使用 60°、最大 200 距離作為五條散彈路徑的包絡與預覽；五個 `breach_pellet` 是實際傷害來源，每個目標依真正命中的散彈顆數承受單顆傷害，扇形標記只作視覺用途。
 
-**獨立測試**：將玩家／怪物放在扇形中心、左右 30° 邊界、邊界內側、弧形外、射程外與原點附近，重複施放並檢查每個目標生命與傷害事件數。
+**獨立測試**：將玩家／怪物放在散彈路徑中心、路徑間、60° 包絡邊界、所有路徑外、射程外與原點附近，重複施放並檢查每個目標生命與實際命中顆數。
 
 ### 先行測試
 
-- [X] T014 [P] [US2] 在 `pvpve_escape/tests/test_breach_cone.py` 建立中心、左右邊界、目標圓部分相交、扇形外、射程外、原點附近、多目標與跨幀前端掃掠的失敗測試。
-- [X] T015 [US2] 在 `pvpve_escape/tests/test_aiming.py` 與 `pvpve_escape/tests/test_breach_cone.py` 補充破陣者 60°／200 距離預覽與權威判定資料一致性測試，確認邊界截斷不把圖形或落點畫到世界外（依賴 T014，避免與 T014 同時修改 `test_breach_cone.py`）。
+- [X] T014 [P] [US2] 在 `pvpve_escape/tests/test_breach_cone.py` 建立單一路徑、重疊路徑、路徑間、所有路徑外、射程外、原點附近、多目標與跨幀前端掃掠的失敗測試。
+- [X] T015 [US2] 在 `pvpve_escape/tests/test_aiming.py` 與 `pvpve_escape/tests/test_breach_cone.py` 補充破陣者 60°／200 距離預覽與五條實際散彈路徑資料一致性測試，確認邊界截斷不把圖形或落點畫到世界外（依賴 T014，避免與 T014 同時修改 `test_breach_cone.py`）。
 
 ### 實作
 
 - [X] T016 [US2] 在 `pvpve_escape/characters.py` 固定破陣者普攻的 `angle=60`、`range=200`、`pellets=5`、`projectile_speed=900` 與既有每顆散射彈傷害／強化修正，並以 metadata 傳給世界與渲染層（依賴 T009、T014）。
-- [X] T017 [US2] 在 `pvpve_escape/world.py` 將 `breach_cone` 改為唯一權威扇形掃掠：使用原點／方向、目標碰撞圓半徑擴張的角度與距離公式、上一幀至本幀前端環帶，對每個目標最多套用五個獨立 pellet 傷害事件（依賴 T006、T011、T014、T016）。
-- [X] T018 [US2] 在 `pvpve_escape/world.py` 將五個 `breach_pellet` 保留為 `visual_only` 軌跡，為每條軌跡保存 pellet index／路徑，禁止它們再次呼叫傷害或能量累積；同一目標不得因迭代或同幀更新產生第六次傷害（依賴 T017）。
-- [X] T019 [US2] 在 `pvpve_escape/aiming.py` 與 `pvpve_escape/rendering.py` 使用與權威扇形相同的 60°、200 距離、原點、方向與掃掠進度繪製填色弧形、五條軌跡與命中脈衝，並保留地圖邊界內縮（依賴 T012、T015、T017、T018）。
-- [X] T020 [US2] 依 `specs/003-combat-vfx-cone-ammo/quickstart.md` 執行至少 20 次各邊界位置驗收，並在 `pvpve_escape/tests/test_breach_cone.py` 驗證所有相交目標命中、完全在外目標不受傷害、目標死亡後不再吃後續事件且每次最多五次傷害。
+- [X] T017 [US2] 在 `pvpve_escape/world.py` 將一次 `breach_cone` 施放拆成一個 `visual_only` 扇形標記與五個權威 `breach_pellet`：使用共同原點／方向、固定角度偏移、放大至 16 的散彈半徑、目標碰撞圓與散彈半徑的線段相交、上一幀至本幀連續路徑，依實際命中顆數套用單顆傷害（依賴 T006、T011、T014、T016）。
+- [X] T018 [US2] 在 `pvpve_escape/world.py` 為五個 `breach_pellet` 保存 pellet index／獨立路徑與自己的命中集合，確保每顆對同一目標最多一次、目標死亡後跳過後續傷害；`breach_cone` 只更新視覺，不呼叫傷害或能量規則（依賴 T017）。
+- [X] T019 [US2] 在 `pvpve_escape/aiming.py` 與 `pvpve_escape/rendering.py` 使用與五顆權威散彈相同的 60° 包絡、200 距離、原點、方向與掃掠進度繪製填色弧形、五條軌跡與命中脈衝，並保留地圖邊界內縮（依賴 T012、T015、T017、T018）。
+- [X] T020 [US2] 依 `specs/003-combat-vfx-cone-ammo/quickstart.md` 執行至少 20 次各路徑位置驗收，包含最遠距離相鄰路徑中點，並在 `pvpve_escape/tests/test_breach_cone.py` 驗證單顆／多顆命中傷害、放大半徑覆蓋路徑間隙、完全在路徑外目標不受傷害、目標死亡後不再吃後續事件且每次最多五次傷害。
 
-**檢查點**：畫面上的完整扇形就是實際傷害範圍；中心線、單一散射彈或視覺軌跡不得成為隱藏的額外限制或傷害來源。
+**檢查點**：畫面上的五條散彈軌跡就是實際傷害路徑；60° 扇形只是包絡與視覺標記，不能固定補滿傷害，也不能讓視覺標記成為傷害來源。
 
 ---
 
@@ -212,7 +212,7 @@
 ### 增量交付
 
 1. **第一增量**：US1 完成後可測試所有戰鬥效果與命中回饋。
-2. **第二增量**：US2 完成後破陣者完整扇形與五次傷害上限可獨立驗收。
+2. **第二增量**：US2 完成後破陣者五條散彈路徑與命中顆數傷害可獨立驗收。
 3. **第三增量**：US3 完成後少量彈匣的攻擊／恢復取捨可獨立驗收。
 4. **第四增量**：US4 完成後所有資訊面板可配置半透明，並執行完整回歸與 PR 發布。
 
@@ -226,6 +226,6 @@
 
 - 所有 T001～T038 任務完成並維持勾選清單格式。
 - `spec.md` 的 FR-001～FR-024 與 SC-001～SC-008 均有對應任務、測試或手動驗收。
-- 六角色／大招／配件的畫面回饋與規則狀態一致；破陣者扇形命中與五次上限成立；攻擊期間彈藥不恢復；GUI alpha 只作用於指定背景。
+- 六角色／大招／配件的畫面回饋與規則狀態一致；破陣者五條散彈的命中顆數與傷害成立；攻擊期間彈藥不恢復；GUI alpha 只作用於指定背景。
 - `pvpve_escape/tests/`、編譯檢查、`git diff --check` 與 `quickstart.md` 驗收通過。
 - PR 連結 `specs/003-combat-vfx-cone-ammo/` 並記錄驗證結果。

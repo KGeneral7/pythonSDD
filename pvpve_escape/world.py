@@ -479,10 +479,6 @@ def _next_effect(match: MatchState, kind: str, action: CombatAction, **kwargs) -
         terrain_interaction=terrain_interaction,
         terrain_blocker_snapshot=tuple(terrain_blocker_snapshot),
     )
-    if kind == "breach_cone":
-        # 每一個 target key 對應已結算的 pellet index 集合；這個資料只
-        # 由權威扇形效果讀寫，避免視覺軌跡重複造成傷害。
-        effect.metadata.setdefault("pellet_hits", {})
     if "impact_position" in effect_values:
         effect.impact_position = effect_values["impact_position"]
     if "impact_status" in effect_values:
@@ -516,7 +512,7 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
             remaining=action.range / max(action.projectile_speed, 0.001) + 0.20,
             max_distance=action.range,
             projectile_speed=action.projectile_speed,
-            metadata={"visual_only": 0, "pellet_hits": {}, "path_end": path_end},
+            metadata={"visual_only": 1, "path_end": path_end},
             terrain_blocker_snapshot=blocker_snapshot,
         )
         center_angle = math.atan2(action.direction.y, action.direction.x)
@@ -538,10 +534,10 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
                 metadata={
                     "pellet_index": index,
                     "angle": spread_angle,
-                    "visual_only": 1,
+                    "primary_scaling": 1,
                     "visual_parent_effect_id": cone_effect.effect_id,
                 },
-                terrain_interaction=TerrainInteraction.BREAK_THIN_ON_PATH,
+                terrain_interaction=TerrainInteraction.BLOCK,
             )
             _next_effect(
                 match,
@@ -902,119 +898,11 @@ def _segment_impact_position(start: Vector2, end: Vector2, projection: float) ->
     return start + direction * max(0.0, min((end - start).length(), projection))
 
 
-def _breach_cone_intersects_target(
-    origin: Vector2,
-    direction: Vector2,
-    previous_front: float,
-    current_front: float,
-    max_distance: float,
-    angle_degrees: float,
-    target_position: Vector2,
-    target_radius: float,
-) -> bool:
-    """判斷目標碰撞圓是否與本幀前端掃掠的扇形相交。"""
-
-    offset = target_position - origin
-    distance = offset.length()
-    radius = max(0.0, float(target_radius))
-    if distance > max_distance + radius + config.GEOMETRY_EPSILON:
-        return False
-    if distance - radius > current_front + config.GEOMETRY_EPSILON:
-        return False
-    if distance + radius < previous_front - config.GEOMETRY_EPSILON:
-        return False
-    if distance <= radius + config.GEOMETRY_EPSILON:
-        return True
-
-    normalized_direction = direction.normalized() if direction.length() else Vector2(1.0, 0.0)
-    cosine = max(-1.0, min(1.0, normalized_direction.dot(offset / distance)))
-    target_angle = math.acos(cosine)
-    angle_margin = math.asin(
-        max(0.0, min(1.0, radius / max(distance, config.GEOMETRY_EPSILON)))
-    )
-    return target_angle <= math.radians(angle_degrees) / 2.0 + angle_margin + config.GEOMETRY_EPSILON
-
-
-def _update_breach_cone(match: MatchState, effect: AbilityEffect, delta_time: float) -> None:
-    """以單一權威效果掃掠完整扇形並結算每顆 pellet 的傷害機會。"""
-
-    if effect.metadata.get("terrain_blocked"):
-        return
-    previous_front = effect.distance_travelled
-    blocker_snapshot = effect.terrain_blocker_snapshot or None
-    _advance_projectile(effect, delta_time, match.obstacles, blocker_snapshot)
-    current_front = effect.distance_travelled
-    pellet_count = max(0, int(effect.metadata.get("pellets", config.BREACH_PELLET_COUNT)))
-    angle_degrees = float(effect.metadata.get("angle", config.BREACH_CONE_ANGLE_DEGREES))
-    pellet_hits = effect.metadata.setdefault("pellet_hits", {})
-    impact_results = effect.metadata.setdefault("impact_results", {})
-    damage_action = CombatAction(
-        kind="breach_cone",
-        owner_id=effect.owner_id,
-        origin=effect.origin.copy(),
-        direction=effect.direction,
-        damage=effect.damage,
-        range=effect.max_distance,
-        metadata={"primary_scaling": 1},
-    )
-    for target_kind, target_id, target_position, target_radius in list(_target_entries(match, effect.owner_id)):
-        key = (target_kind, target_id)
-        hit_indices = pellet_hits.setdefault(key, set())
-        if not isinstance(hit_indices, set):
-            hit_indices = set(hit_indices)
-            pellet_hits[key] = hit_indices
-        if len(hit_indices) >= pellet_count:
-            continue
-        if not _breach_cone_intersects_target(
-            effect.origin,
-            effect.direction,
-            previous_front,
-            current_front,
-            effect.max_distance,
-            angle_degrees,
-            target_position,
-            target_radius,
-        ):
-            continue
-
-        total_effective = 0.0
-        impact_position = target_position.copy()
-        for pellet_index in range(pellet_count):
-            if pellet_index in hit_indices:
-                continue
-            target = _get_target(match, target_kind, target_id)
-            if target is None or not getattr(target, "alive", False):
-                break
-            event = apply_damage(
-                match,
-                effect.owner_id,
-                target_kind,
-                target_id,
-                _scaled_action_damage(match, damage_action, target_kind, target_id),
-            )
-            hit_indices.add(pellet_index)
-            if event is not None:
-                total_effective += event.effective_damage
-        if hit_indices:
-            effect.hit_target_ids.add(key)
-            impact_results[key] = {
-                "position": impact_position,
-                "hits": len(hit_indices),
-                "effective_damage": total_effective,
-                "status": "命中" if total_effective > 0 else "被擋／免傷",
-            }
-            effect.metadata["impacted"] = 1
-    if effect.metadata.get("terrain_blocked"):
-        effect.metadata["sweep_complete"] = 1
-        effect.remaining = min(effect.remaining, 0.12)
-
-
-
 def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time: float) -> None:
     """更新飛行物、光束、地雷、護盾與持續控場效果。"""
 
     retained: list[AbilityEffect] = []
-    projectile_kinds = {"sniper_line", "boomerang", "mine"}
+    projectile_kinds = {"breach_pellet", "sniper_line", "boomerang", "mine"}
     for effect in match.effects:
         owner = _get_target(match, "player", effect.owner_id)
         if owner is None or not owner.alive:
@@ -1022,17 +910,6 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
         if effect.kind in {"guardian_guard", "shield"}:
             # 防禦效果跟隨施放者；攻擊效果則固定使用自己的施放座標。
             effect.position = owner.position.copy()
-        if effect.kind == "breach_cone":
-            effect.remaining -= delta_time
-            _update_breach_cone(match, effect, delta_time)
-            if effect.distance_travelled >= effect.max_distance - 0.001:
-                if not effect.metadata.get("sweep_complete"):
-                    effect.metadata["sweep_complete"] = 1
-                    # 留一小段時間繪製命中脈衝，再由一般生命週期清除。
-                    effect.remaining = max(effect.remaining, 0.12)
-            if effect.remaining > 0:
-                retained.append(effect)
-            continue
         if is_visual_only_effect(effect):
             # 視覺-only 效果只更新自己的位置與壽命，絕不進入目標
             # 碰撞、傷害、控制或大招能量流程。
@@ -1057,7 +934,7 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
 
         if effect.kind in projectile_kinds:
             effect.remaining -= delta_time
-            if effect.kind == "sniper_line" and effect.metadata.get("impacted"):
+            if effect.kind in {"sniper_line", "breach_pellet"} and effect.metadata.get("impacted"):
                 # 命中閃光標記固定在實際碰撞位置，不跟著目標移動。
                 if effect.remaining > 0:
                     retained.append(effect)
@@ -1203,7 +1080,7 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
                 projection, target_kind, target_id = candidates[0]
                 impact = _segment_impact_position(previous, current, projection)
                 _projectile_impact(match, effect, target_kind, target_id, impact)
-                effect.remaining = 0.14
+                effect.remaining = 0.12 if effect.kind == "breach_pellet" else 0.14
                 retained.append(effect)
                 continue
 

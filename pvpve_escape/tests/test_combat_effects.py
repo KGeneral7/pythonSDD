@@ -88,14 +88,14 @@ class CombatEffectDataTests(unittest.TestCase):
             _apply_action(match, action)
             self.assertIn(expected_kind, {effect.kind for effect in match.effects}, tactical)
 
-    def test_visual_only_breach_trails_never_change_target_state(self) -> None:
+    def test_breach_cone_marker_never_changes_target_state_without_pellets(self) -> None:
         match = create_match(CharacterId.BREACHER)
         match.monsters = []
         owner = match.players[0]
         target = match.players[1]
         for other in match.players[2:]:
             other.alive = False
-        target.position = owner.position + Vector2(100, 0)
+        target.position = owner.position + Vector2(180, 0)
         before_health = target.health
         action = create_primary_action(owner, Vector2(1, 0))
         self.assertIsNotNone(action)
@@ -104,13 +104,38 @@ class CombatEffectDataTests(unittest.TestCase):
         cone = next(effect for effect in match.effects if effect.kind == "breach_cone")
         trails = [effect for effect in match.effects if effect.kind == "breach_pellet"]
         self.assertEqual(len(trails), 5)
-        self.assertTrue(all(effect.metadata.get("visual_only") for effect in trails))
-        match.effects.remove(cone)
+        self.assertTrue(cone.metadata.get("visual_only"))
+        self.assertTrue(all(not effect.metadata.get("visual_only") for effect in trails))
+        self.assertTrue(all(effect.metadata.get("primary_scaling") for effect in trails))
+        for trail in trails:
+            match.effects.remove(trail)
 
-        update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
+        for _ in range(12):
+            update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
 
         self.assertEqual(target.health, before_health)
         self.assertEqual(target.ultimate_energy, 0.0)
+
+    def test_breach_pellets_apply_damage_independently_of_cone_marker(self) -> None:
+        match = create_match(CharacterId.BREACHER)
+        match.monsters = []
+        owner = match.players[0]
+        target = match.players[1]
+        for other in match.players[2:]:
+            other.alive = False
+        target.position = owner.position + Vector2(180, 0)
+        before_health = target.health
+        action = create_primary_action(owner, Vector2(1, 0))
+        self.assertIsNotNone(action)
+        assert action is not None
+        _apply_action(match, action)
+        cone = next(effect for effect in match.effects if effect.kind == "breach_cone")
+        match.effects.remove(cone)
+
+        for _ in range(12):
+            update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
+
+        self.assertAlmostEqual(before_health - target.health, 7.0 * 1.2, places=5)
 
     def test_all_abilities_survive_twenty_repeated_cast_smoke_runs(self) -> None:
         """以固定資料重複施放，確保效果 kind 與繪製資料不會偶發缺失。"""

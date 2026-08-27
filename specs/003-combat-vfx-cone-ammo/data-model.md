@@ -122,11 +122,11 @@ primary_attack_active(player, input) =
     "angle": 60,
     "pellets": 5,
     "visual_pellets": 5,
-    "authoritative_shape": "sector_sweep",
+    "authoritative_shape": "five_projectiles_in_sector",
 }
 ```
 
-`pellets` 是每個目標在一次施放中可接受的獨立傷害事件上限，不代表要建立五個可傷害的 projectile。
+`pellets` 是一次施放實際建立的可傷害投射物數量；每顆散彈的碰撞半徑為 `16` world units，單顆傷害沿用 `CombatAction.damage`（目前基礎值為 `7`），目標命中 `k` 顆時依序套用 `k` 次單顆傷害與既有修正。
 
 ## 能力效果
 
@@ -162,32 +162,28 @@ primary_attack_active(player, input) =
 
 一次普攻建立：
 
-1. 一個 `breach_cone` 權威效果：`origin` 固定、`position` 為掃掠前端、60°、200 距離、`pellets=5`。
-2. 五個 `breach_pellet` 視覺-only 效果：各自有 `pellet_index`、方向偏移與獨立軌跡；不可產生傷害。
+1. 一個 `breach_cone` 視覺-only 效果：`origin` 固定、60°、200 距離與 `pellets=5`，只畫出散射包絡。
+2. 五個 `breach_pellet` 權威效果：各自有 `pellet_index`、方向偏移、半徑 `16`、獨立位置／前端與連續碰撞路徑；每顆都可以造成單顆傷害。
 
-`breach_cone.hit_target_ids` 維持目標識別的集合；每個目標已處理的 pellet index 另以 `metadata["pellet_hits"]` 保存，型別為 `dict[tuple[str, int], set[int]]`。這兩層資料不可混用：前者防止同一個移動效果重複處理目標，後者確保同一目標每次施放最多五顆散射彈事件。
+每個 `breach_pellet.hit_target_ids` 維持該顆散彈已命中的 `(target_kind, target_id)` 集合；五顆不同散彈可以對同一目標各自留下命中紀錄。`breach_cone` 不保存傷害命中資料，也不建立 `pellet_hits` 聚合表。
 
-## 扇形命中模型
+## 散彈路徑命中模型
 
-給定扇形原點 `O`、方向單位向量 `D`、目標中心 `P`、目標半徑 `r`、最大距離 `R`、半角 `a=30°`：
-
-```text
-v = P - O
-d = |v|
-target_angle = acos(clamp(dot(D, normalize(v)), -1, 1))
-angle_margin = asin(clamp(r / max(d, epsilon), 0, 1))
-
-inside_range = d <= R + r
-inside_angle = d <= epsilon OR target_angle <= a + angle_margin
-```
-
-若 `inside_range AND inside_angle` 成立，再以目前掃掠前端 `front` 與上一幀前端 `previous_front` 檢查：
+給定散彈路徑起點 `O`、該顆散彈方向單位向量 `D_i`、目標中心 `P`、目標半徑 `r`、散彈半徑 `q=16`、最大距離 `R`：
 
 ```text
-d - r <= front AND d + r >= previous_front
+S_i = previous_position_i
+E_i = current_position_i
+path_distance = distance_to_segment(P, S_i, E_i)
+intersects = path_distance <= r + q
+inside_range = distance(P, O) <= R + r
 ```
 
-通過後，對尚未處理的 pellet index 產生最多五個傷害事件。順序固定、結果可重現；不因渲染幀率或同幀重複 update 而增加事件。
+當 `intersects AND inside_range` 成立，且 `(target_kind, target_id)` 尚未在該顆散彈的 `hit_target_ids` 中，就套用一次單顆傷害。每顆散彈的線段從原點沿自身偏移方向前進，並在射程或地形阻擋處停止。
+
+五顆散彈的結果彼此獨立；同一目標本次命中 `k` 顆時，總基礎傷害為 `k * 7`，再逐顆套用既有被動與升級修正。視覺 `breach_cone` 只顯示包絡，不參與這個公式。
+
+五條路徑相隔 15°；在 `R=200` 的最遠處，相鄰路徑中點的最大垂直間隙約為 `200 * sin(7.5°) = 26.1`。`q=16` 搭配遊戲內最小目標半徑 15，可讓 60° 包絡內的玩家／怪物至少與一條散彈路徑相交。
 
 ## GUI 設定
 
@@ -202,14 +198,14 @@ d - r <= front AND d + r >= previous_front
 ### 破陣者攻擊
 
 ```text
-ready -> cone_sweeping -> cone_expired
-              ├─ each target: 0..5 pellet damage events
-              └─ five visual pellet trails expire independently
+ready -> cone_marker + five_pellets -> expired
+              ├─ each pellet: 0..1 hit per target
+              └─ each target: 0..5 damage events by actual path intersections
 ```
 
 - `origin` 與施放位置固定，不隨玩家後續移動。
-- 扇形範圍是唯一傷害來源；視覺-only pellet 不可改變生命。
-- 目標進入扇形邊界時依圓形半徑判定，死亡後不再接受有效傷害。
+- 五顆 `breach_pellet` 是唯一傷害來源；視覺-only `breach_cone` 不可改變生命。
+- 每顆散彈依線段與目標碰撞圓判定，死亡後不再接受後續有效傷害。
 
 ### 普攻與彈藥
 

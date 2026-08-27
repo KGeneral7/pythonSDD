@@ -313,13 +313,13 @@ class TraditionalChineseFontTests(unittest.TestCase):
             match.camera.position = Vector2(0, 0)
             rendering.draw_match(surface, match)
             self.assertEqual(surface.get_at((1030, 450))[:3], config.THICK_WALL_COLOR)
-            self.assertEqual(surface.get_at((970, 280))[:3], config.BUSH_COLOR)
+            self.assertEqual(surface.get_at((850, 350))[:3], config.BUSH_COLOR)
 
             # 移到地圖右下區域：確認世界座標不是只在開場畫面硬編碼繪製。
             match.camera.position = Vector2(1200, 700)
             rendering.draw_match(surface, match)
-            self.assertEqual(surface.get_at((860, 550))[:3], config.THIN_WALL_COLOR)
-            self.assertEqual(surface.get_at((770, 30))[:3], config.BUSH_COLOR)
+            self.assertEqual(surface.get_at((850, 100))[:3], config.THIN_WALL_COLOR)
+            self.assertEqual(surface.get_at((1050, 200))[:3], config.BUSH_COLOR)
 
     def test_destroyed_terrain_is_removed_from_the_next_map_draw(self) -> None:
         match = create_match()

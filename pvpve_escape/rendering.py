@@ -602,9 +602,11 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
         if not isinstance(tail, Vector2):
             tail = effect.position - direction * 26
         screen_tail = _screen_point(match, tail)
-        pygame.draw.line(surface, config.ABILITY_COLORS["breach"], screen_tail, point, 4)
-        pygame.draw.circle(surface, config.ABILITY_COLORS["breach"], point, 6)
-        pygame.draw.circle(surface, config.TEXT_COLOR, point, 6, 1)
+        pellet_radius = max(1, int(round(config.BREACH_PELLET_RADIUS)))
+        pellet_width = max(1, pellet_radius * 2)
+        pygame.draw.line(surface, config.ABILITY_COLORS["breach"], screen_tail, point, pellet_width)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["breach"], point, pellet_radius)
+        pygame.draw.circle(surface, config.TEXT_COLOR, point, pellet_radius, 1)
     elif kind == "sniper_line":
         impact_blocked = bool(effect.metadata.get("impact_blocked", 0))
         impact_color = config.DANGER_COLOR if impact_blocked else config.ABILITY_COLORS["sniper"]

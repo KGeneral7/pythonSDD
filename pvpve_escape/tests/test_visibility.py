@@ -45,7 +45,7 @@ class BushViewerRenderingTests(unittest.TestCase):
             self.assertNotIn(self.hidden_player, other_view_players)
             # draw_match 之後右下玩家名單會覆蓋部分世界像素；取樣另一片
             # 不在 HUD 上的草叢，確認地形仍由正式入口繪出。
-            self.assertEqual(surface.get_at((900, 260))[:3], config.BUSH_COLOR)
+            self.assertEqual(surface.get_at((850, 350))[:3], config.BUSH_COLOR)
 
             overlay.reset_mock()
             rendering.draw_match(surface, self.match, viewer_id=self.hidden_player.player_id)

@@ -71,8 +71,8 @@ config.py 保存不可變的配置資料，terrain.py 負責轉成新物件：
 - BUSH_LAYOUT：由 left、top、width、height 組成的 tuple。
 - 配置採地圖編輯器送出的固定座標，位置固定且每場一致，不要求世界中心水平/垂直鏡像。
 - 建立時必須驗證物件完全在世界內；與 SPAWN_POINTS、MONSTER_CAMP_POINTS 或中央 EXTRACTION_ZONE 安全判定區重疊時只產生警示，不得自動刪除已由使用者確認的配置。
-- 測試檢查 18 個牆體、16 個草叢、兩種牆型、世界邊界，以及 9 筆已確認保留的安全區警示。
-- 正式畫面由 `rendering.draw_match` → `draw_world` → `draw_terrain` 逐一繪出這 34 個矩形；每個矩形先以 `match.camera.position` 轉成畫面座標，再依 Pygame surface 裁切，地面/網格之後先畫草叢，再畫牆，攝影機移入世界座標範圍時即可看到對應物件。
+- 測試檢查 18 個牆體（12 個厚牆、6 個薄牆）、27 個草叢、兩種牆型、世界邊界，以及 5 筆已確認保留的安全區警示。
+- 正式畫面由 `rendering.draw_match` → `draw_world` → `draw_terrain` 逐一繪出這 45 個矩形；每個矩形先以 `match.camera.position` 轉成畫面座標，再依 Pygame surface 裁切，地面/網格之後先畫草叢，再畫牆，攝影機移入世界座標範圍時即可看到對應物件。
 
 建議集中設定值：
 
@@ -131,14 +131,14 @@ create_match 的順序為建立玩家/怪物 → 建立全新障礙物與草叢�
 
 | 值 | 適用動作 | 行為 |
 |---|---|---|
-| BLOCK | 一般移動/技能 | 第一面尚未破壞的牆阻擋；草叢忽略 |
-| BREAK_THIN_ON_PATH | 破陣者遠程路徑 | 可移除路徑第一面薄牆，但本次 effect 仍在該牆位置停止 |
+| BLOCK | 一般移動/技能、破陣者 breach_cone / breach_pellet | 第一面尚未破壞的牆阻擋；草叢忽略 |
+| BREAK_THIN_ON_PATH | 明確具備遠程破牆資格的路徑 action | 可移除路徑第一面薄牆，但本次 effect 仍在該牆位置停止；破陣者普攻不使用此政策 |
 | BREAK_THIN_IN_AREA | 破陣者爆發 | 移除作用範圍內的薄牆與草叢；厚牆不變 |
 | DASH_BREAK_FIRST_THIN | DASH | 移除衝刺路徑第一面薄牆，消耗到牆前的距離後繼續；下一面牆仍阻擋 |
 
 CombatAction 增加 terrain_interaction 欄位，放在既有 metadata 之後並提供 BLOCK 預設，以保留目前 positional 建構相容性。由角色/配件建立動作時設定，不讓 world.py 依傷害大小猜測是否可以破壞。
 
-AbilityEffect 複製 action 的地形互動狀態。需要防止同次遠程破牆穿透時，在 metadata 保存施放當下的地形阻擋快照，至少包含 obstacle_id、kind、bounds。快照只供該 effect 的目標路徑查詢，不回寫地形；實際 destroyed 狀態仍由 MatchState 保存。
+AbilityEffect 複製 action 的地形互動狀態。只有明確使用遠程破牆政策時，才需要在 metadata 保存施放當下的地形阻擋快照，至少包含 obstacle_id、kind、bounds，以防止同次施放穿透；BLOCK 的破陣者普攻不建立此快照。快照只供該 effect 的目標路徑查詢，不回寫地形；實際 destroyed 狀態仍由 MatchState 保存。
 
 ## 移動狀態轉移
 
@@ -170,13 +170,11 @@ sniper_line、sniper_ultimate_line、boomerang、mine、beam、hunter_dash、tac
 
 ## 破牆狀態轉移
 
-### 遠程破牆
+### 遠程技能與破牆
 
-1. 建立 effect 時從目前尚未破壞牆體建立地形快照。
-2. 破陣者能力找到路徑上的第一面薄牆時，將其 destroyed 設為 True；厚牆只回傳阻擋。
-3. effect 的有效傷害端點仍停在快照牆前。
-4. 本次 effect 對牆後目標使用快照判斷，不因牆已被移除而穿過缺口。
-5. 下一次新施放重新讀取地形狀態，因此可以使用已打通的缺口。
+1. `breach_cone` 與 `breach_pellet` 使用 `BLOCK`，從施放位置到第一面牆截斷路徑；薄牆不設為 `destroyed=True`，草叢也不受影響。
+2. 只有明確使用 `BREAK_THIN_ON_PATH` 的遠程 action 才在建立 effect 時保存尚未破壞牆體快照，移除第一面薄牆後仍以快照阻擋同次傷害，避免穿過新缺口。
+3. `breach_burst` 使用 `BREAK_THIN_IN_AREA` 移除範圍內薄牆與草叢，厚牆保持存在；下一次施放讀取更新後的 MatchState。
 
 ### DASH
 
@@ -244,7 +242,7 @@ update_world 的本幀順序必須為：
 | config.py | 固定地形 tuple、牆/草叢顏色、恢復常數 |
 | models.py | WorldRect、ObstacleKind、ObstacleState、BushState、TerrainHitResult、玩家/動作欄位 |
 | terrain.py | 地形建立、幾何查詢、移動/路徑解析、破壞與草叢判定 |
-| characters.py | 只為破陣者與 DASH 設定 TerrainInteraction；其他能力使用 BLOCK |
+| characters.py | 為破陣者終極技能與 DASH 設定破壞型 TerrainInteraction；破陣者主要技能與其他能力使用 BLOCK |
 | rules.py | 受擊/攻擊計時、恢復公式、死亡/重生重置 |
 | world.py | 建立單局地形、套用生物/技能碰撞、處理破壞與更新順序 |
 | aiming.py | 使用不修改狀態的地形端點預覽，保持瞄準線和實際路徑一致 |
@@ -262,6 +260,6 @@ update_world 的本幀順序必須為：
 
 ## 實作核對結果
 
-- `MatchState` 已在每場建立 18 個牆體與 16 個草叢的獨立狀態；新局會重新建立，破壞狀態不跨局保留。
+- `MatchState` 已在每場建立 18 個牆體與 27 個草叢的獨立狀態；新局會重新建立，破壞狀態不跨局保留。
 - `draw_match` 已接入地形繪製與 `viewer_id` 過濾；牆體依相機座標繪製在正式畫面，草叢內玩家只對其他觀看者隱藏。
-- `update_world` 已接入移動/技能地形解析與恢復順序；完整自動化測試為 159/159 通過。
+- `update_world` 已接入移動/技能地形解析與恢復順序；完整自動化測試為 162/162 通過。

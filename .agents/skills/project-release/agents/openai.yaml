@@ -1,0 +1,3 @@
+interface:
+  display_name: "專案發布流程"
+  short_description: "執行審查、文件同步、PR、發布、合併與分支清理"
