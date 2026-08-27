@@ -22,13 +22,15 @@ CHARACTER_DEFINITIONS: dict[CharacterId, CharacterDefinition] = {
         ammo_capacity=3,
         ammo_recovery_interval=0.45,
         primary_cooldown=0.75,
-        primary_damage=8.0,
-        primary_range=180.0,
-        passive_text="180 內傷害 +20%",
-        ultimate_text="半徑 180 爆發並擊退",
+        primary_damage=7.0,
+        primary_range=200.0,
+        passive_text="200 內傷害 +20%",
+        ultimate_text="半徑 190 爆發並擊退",
+        base_health=110.0,
+        projectile_speed=900.0,
         passive_multiplier=1.2,
         passive_condition="close",
-        parameters={"pellets": 5.0, "angle": 60.0, "ultimate_radius": 180.0, "ultimate_knockback": 120.0},
+        parameters={"pellets": 5.0, "angle": 60.0, "passive_range": 200.0, "ultimate_damage": 55.0, "ultimate_radius": 190.0, "ultimate_knockback": 120.0},
     ),
     CharacterId.SNIPER: CharacterDefinition(
         character_id=CharacterId.SNIPER,
@@ -37,13 +39,15 @@ CHARACTER_DEFINITIONS: dict[CharacterId, CharacterDefinition] = {
         ammo_capacity=2,
         ammo_recovery_interval=0.80,
         primary_cooldown=1.25,
-        primary_damage=45.0,
-        primary_range=900.0,
+        primary_damage=50.0,
+        primary_range=1000.0,
         passive_text="超過 450 距離傷害 +20%",
-        ultimate_text="射程 1000 的穿透線",
+        ultimate_text="射程 1100 的穿透線",
+        base_health=80.0,
+        projectile_speed=1400.0,
         passive_multiplier=1.2,
         passive_condition="far",
-        parameters={"charge": 0.6, "passive_range": 450.0, "ultimate_range": 1000.0, "ultimate_damage": 80.0},
+        parameters={"charge": 0.6, "passive_range": 450.0, "ultimate_range": 1100.0, "ultimate_damage": 90.0},
     ),
     CharacterId.GUARDIAN: CharacterDefinition(
         character_id=CharacterId.GUARDIAN,
@@ -52,10 +56,12 @@ CHARACTER_DEFINITIONS: dict[CharacterId, CharacterDefinition] = {
         ammo_capacity=2,
         ammo_recovery_interval=0.60,
         primary_cooldown=0.80,
-        primary_damage=25.0,
-        primary_range=105.0,
+        primary_damage=30.0,
+        primary_range=125.0,
         passive_text="最大生命值 +20%",
         ultimate_text="4 秒減傷 70%",
+        base_health=115.0,
+        projectile_speed=0.0,
         parameters={"angle": 100.0, "knockback": 120.0, "ultimate_duration": 4.0, "reduction": 0.7},
     ),
     CharacterId.HUNTER: CharacterDefinition(
@@ -65,11 +71,13 @@ CHARACTER_DEFINITIONS: dict[CharacterId, CharacterDefinition] = {
         ammo_capacity=3,
         ammo_recovery_interval=0.35,
         primary_cooldown=0.85,
-        primary_damage=18.0,
-        primary_range=300.0,
+        primary_damage=24.0,
+        primary_range=340.0,
         passive_text="移動速度 +15%",
-        ultimate_text="突進、免傷並傷害路徑",
-        parameters={"projectile_speed": 520.0, "ultimate_distance": 320.0, "ultimate_invulnerability": 0.5, "ultimate_damage": 40.0},
+        ultimate_text="突進 360、免傷並傷害路徑",
+        base_health=95.0,
+        projectile_speed=520.0,
+        parameters={"ultimate_distance": 360.0, "ultimate_invulnerability": 0.5, "ultimate_damage": 50.0},
     ),
     CharacterId.CONTROLLER: CharacterDefinition(
         character_id=CharacterId.CONTROLLER,
@@ -78,12 +86,14 @@ CHARACTER_DEFINITIONS: dict[CharacterId, CharacterDefinition] = {
         ammo_capacity=2,
         ammo_recovery_interval=0.55,
         primary_cooldown=0.90,
-        primary_damage=18.0,
-        primary_range=420.0,
+        primary_damage=20.0,
+        primary_range=460.0,
         passive_text="控制時間 +50%",
-        ultimate_text="半徑 170 重力牢籠",
+        ultimate_text="半徑 190 重力牢籠",
+        base_health=90.0,
+        projectile_speed=650.0,
         passive_multiplier=1.5,
-        parameters={"mine_radius": 100.0, "slow": 0.5, "slow_duration": 1.5, "max_mines": 2.0, "ultimate_radius": 170.0, "ultimate_slow": 0.7, "ultimate_root": 0.75, "ultimate_duration": 3.0},
+        parameters={"mine_radius": 100.0, "slow": 0.5, "slow_duration": 1.5, "max_mines": 2.0, "ultimate_radius": 190.0, "ultimate_slow": 0.7, "ultimate_root": 0.75, "ultimate_duration": 3.0},
     ),
     CharacterId.SIPHONER: CharacterDefinition(
         character_id=CharacterId.SIPHONER,
@@ -92,11 +102,13 @@ CHARACTER_DEFINITIONS: dict[CharacterId, CharacterDefinition] = {
         ammo_capacity=4,
         ammo_recovery_interval=0.20,
         primary_cooldown=0.15,
-        primary_damage=7.0,
-        primary_range=260.0,
+        primary_damage=6.0,
+        primary_range=280.0,
         passive_text="對怪物能量 +25%",
-        ultimate_text="半徑 200 傷害並吸血",
-        parameters={"beam_tick": 0.15, "beam_duration": 1.2, "energy_multiplier": 1.25, "ultimate_radius": 200.0, "ultimate_damage": 50.0, "heal_ratio": 0.5},
+        ultimate_text="半徑 220 傷害並吸血",
+        base_health=105.0,
+        projectile_speed=0.0,
+        parameters={"beam_tick": 0.15, "beam_duration": 1.2, "energy_multiplier": 1.25, "ultimate_radius": 220.0, "ultimate_damage": 60.0, "heal_ratio": 0.5},
     ),
 }
 
@@ -155,9 +167,10 @@ def calculate_attack_damage(
 
     definition = get_character_definition(player.character_id)
     damage = definition.primary_damage * calculate_upgrade_multiplier(player.upgrade_stacks)
-    if definition.passive_condition == "close" and distance <= 180.0:
+    passive_range = float(definition.parameters.get("passive_range", 180.0))
+    if definition.passive_condition == "close" and distance <= passive_range:
         damage *= definition.passive_multiplier
-    elif definition.passive_condition == "far" and distance >= 450.0:
+    elif definition.passive_condition == "far" and distance >= passive_range:
         damage *= definition.passive_multiplier
     return damage
 
@@ -188,38 +201,43 @@ def create_primary_action(
         return CombatAction(
             kind="breach_cone", owner_id=player.player_id, origin=origin, direction=direction,
             damage=definition.primary_damage, range=definition.primary_range,
-            metadata={"pellets": 5, "angle": 60},
+            projectile_speed=definition.projectile_speed,
+            metadata={"pellets": int(definition.parameters.get("pellets", 5)), "angle": definition.parameters.get("angle", 60.0)},
         )
     if player.character_id == CharacterId.SNIPER:
         return CombatAction(
             kind="sniper_line", owner_id=player.player_id, origin=origin, direction=direction,
             damage=definition.primary_damage, range=definition.primary_range,
+            projectile_speed=definition.projectile_speed,
             metadata={"charge": primary_charge, "piercing": 0},
         )
     if player.character_id == CharacterId.GUARDIAN:
         return CombatAction(
             kind="guardian_arc", owner_id=player.player_id, origin=origin, direction=direction,
             damage=definition.primary_damage, range=definition.primary_range,
-            metadata={"angle": 100, "knockback": 120},
+            metadata={"angle": definition.parameters.get("angle", 100.0), "knockback": definition.parameters.get("knockback", 120.0)},
         )
     if player.character_id == CharacterId.HUNTER:
         return CombatAction(
             kind="boomerang", owner_id=player.player_id, origin=origin, direction=direction,
             damage=definition.primary_damage, range=definition.primary_range, max_distance=definition.primary_range,
-            metadata={"speed": 520},
+            projectile_speed=definition.projectile_speed,
         )
     if player.character_id == CharacterId.CONTROLLER:
         return CombatAction(
             kind="mine", owner_id=player.player_id,
-            origin=origin + direction * 140.0, direction=direction,
+            origin=origin, direction=direction,
             damage=definition.primary_damage, range=definition.primary_range,
-            radius=100.0, duration=12.0,
-            metadata={"slow": 0.5, "slow_duration": 1.5},
+            radius=definition.parameters.get("mine_radius", 100.0), duration=12.0,
+            max_distance=definition.primary_range,
+            projectile_speed=definition.projectile_speed,
+            metadata={"slow": definition.parameters.get("slow", 0.5), "slow_duration": definition.parameters.get("slow_duration", 1.5)},
         )
     return CombatAction(
         kind="beam", owner_id=player.player_id, origin=origin, direction=direction,
         damage=definition.primary_damage, range=definition.primary_range,
-        duration=1.2, metadata={"tick": 0.15},
+        duration=definition.parameters.get("beam_duration", 1.2),
+        metadata={"tick": definition.parameters.get("beam_tick", 0.15)},
     )
 
 
@@ -231,18 +249,20 @@ def create_ultimate_action(player: PlayerState, aim_direction: Vector2) -> Comba
     player.ultimate_energy = 0.0
     direction = _safe_direction(aim_direction)
     player.aim_direction = direction
+    definition = get_character_definition(player.character_id)
+    parameters = definition.parameters
     if player.character_id == CharacterId.BREACHER:
-        return CombatAction("breach_burst", player.player_id, player.position.copy(), direction, 50.0, radius=180.0, metadata={"knockback": 120})
+        return CombatAction("breach_burst", player.player_id, player.position.copy(), direction, parameters.get("ultimate_damage", 55.0), radius=parameters.get("ultimate_radius", 190.0), metadata={"knockback": parameters.get("ultimate_knockback", 120.0)})
     if player.character_id == CharacterId.SNIPER:
-        return CombatAction("sniper_ultimate_line", player.player_id, player.position.copy(), direction, 80.0, range=1000.0, metadata={"piercing": 1})
+        return CombatAction("sniper_ultimate_line", player.player_id, player.position.copy(), direction, parameters.get("ultimate_damage", 90.0), range=parameters.get("ultimate_range", 1100.0), metadata={"piercing": 1})
     if player.character_id == CharacterId.GUARDIAN:
-        return CombatAction("guardian_guard", player.player_id, player.position.copy(), direction, duration=4.0, metadata={"reduction": 0.7})
+        return CombatAction("guardian_guard", player.player_id, player.position.copy(), direction, duration=parameters.get("ultimate_duration", 4.0), metadata={"reduction": parameters.get("reduction", 0.7)})
     if player.character_id == CharacterId.HUNTER:
-        return CombatAction("hunter_dash", player.player_id, player.position.copy(), direction, damage=40.0, max_distance=320.0, duration=0.5)
+        return CombatAction("hunter_dash", player.player_id, player.position.copy(), direction, damage=parameters.get("ultimate_damage", 50.0), max_distance=parameters.get("ultimate_distance", 360.0), duration=parameters.get("ultimate_invulnerability", 0.5))
     if player.character_id == CharacterId.CONTROLLER:
-        control_duration = calculate_control_duration(player, 3.0)
-        return CombatAction("gravity_cage", player.player_id, player.position.copy() + direction * 220.0, direction, radius=170.0, duration=control_duration, metadata={"slow": 0.7, "root": calculate_control_duration(player, 0.75)})
-    return CombatAction("siphon_burst", player.player_id, player.position.copy(), direction, damage=50.0, radius=200.0, metadata={"heal_ratio": 0.5})
+        control_duration = calculate_control_duration(player, parameters.get("ultimate_duration", 3.0))
+        return CombatAction("gravity_cage", player.player_id, player.position.copy() + direction * 220.0, direction, radius=parameters.get("ultimate_radius", 190.0), duration=control_duration, metadata={"slow": parameters.get("ultimate_slow", 0.7), "root": calculate_control_duration(player, parameters.get("ultimate_root", 0.75))})
+    return CombatAction("siphon_burst", player.player_id, player.position.copy(), direction, damage=parameters.get("ultimate_damage", 60.0), radius=parameters.get("ultimate_radius", 220.0), metadata={"heal_ratio": parameters.get("heal_ratio", 0.5)})
 
 
 def create_tactical_action(player: PlayerState, aim_direction: Vector2, move_direction: Vector2) -> CombatAction | None:
@@ -252,9 +272,15 @@ def create_tactical_action(player: PlayerState, aim_direction: Vector2, move_dir
         return None
     definition = get_tactical_definition(player.tactical_id)
     player.tactical_cooldown = definition.cooldown
-    direction = _safe_direction(move_direction if move_direction.length() else aim_direction)
+    # 衝刺沿移動方向操作；需要落點的控場配件則固定沿瞄準方向，
+    # 讓預覽端點與實際控制區中心在同一個世界座標。
     if player.tactical_id == TacticalId.DASH:
-        return CombatAction("tactical_dash", player.player_id, player.position.copy(), direction, max_distance=220.0, duration=0.2)
+        direction = _safe_direction(move_direction if move_direction.length() else aim_direction)
+    else:
+        direction = _safe_direction(aim_direction)
+    if player.tactical_id == TacticalId.DASH:
+        return CombatAction("tactical_dash", player.player_id, player.position.copy(), direction, max_distance=definition.parameters.get("distance", 220.0), duration=definition.parameters.get("invulnerability", 0.2), projectile_speed=0.0)
     if player.tactical_id == TacticalId.SHIELD:
-        return CombatAction("tactical_shield", player.player_id, player.position.copy(), direction, duration=2.0, metadata={"absorb": 60})
-    return CombatAction("tactical_control", player.player_id, player.position.copy() + direction * 100.0, direction, radius=100.0, duration=calculate_control_duration(player, 1.5), metadata={"slow": 0.6})
+        return CombatAction("tactical_shield", player.player_id, player.position.copy(), direction, duration=definition.parameters.get("duration", 2.0), projectile_speed=0.0, metadata={"absorb": definition.parameters.get("absorb", 60.0)})
+    radius = definition.parameters.get("radius", 100.0)
+    return CombatAction("tactical_control", player.player_id, player.position.copy() + direction * radius, direction, radius=radius, duration=calculate_control_duration(player, definition.parameters.get("duration", 1.5)), projectile_speed=0.0, metadata={"slow": definition.parameters.get("slow", 0.6)})

@@ -61,12 +61,12 @@ class GameApplication:
                 self._update_playing(human_input)
                 update_match(self.match, human_input, delta_time)
                 if self.match.phase == MatchPhase.PLAYING:
-                    rendering.draw_match(self.screen, self.match)
+                    rendering.draw_match(self.screen, self.match, human_input)
                 else:
                     rendering.draw_result(self.screen, self.match)
             elif self.match is not None:
                 if self.match.phase == MatchPhase.PLAYING:
-                    rendering.draw_match(self.screen, self.match)
+                    rendering.draw_match(self.screen, self.match, human_input)
                 else:
                     rendering.draw_result(self.screen, self.match)
             pygame.display.flip()

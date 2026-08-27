@@ -95,6 +95,24 @@ class CircleZone:
 
 
 @dataclass
+class AimGuide:
+    """每幀依輸入建立的世界座標瞄準預覽，不保存比賽狀態。"""
+
+    owner_id: int
+    ability_slot: str
+    shape: str
+    origin: Vector2
+    direction: Vector2
+    end: Vector2
+    range: float = 0.0
+    radius: float = 0.0
+    angle_degrees: float = 0.0
+    # path_points 只描述提示線，不會被世界更新拿來鎖定目標。
+    path_points: tuple[Vector2, ...] = field(default_factory=tuple)
+    valid: bool = True
+
+
+@dataclass
 class CharacterDefinition:
     character_id: CharacterId
     display_name: str
@@ -106,6 +124,8 @@ class CharacterDefinition:
     primary_range: float
     passive_text: str
     ultimate_text: str
+    base_health: float = 100.0
+    projectile_speed: float = 0.0
     passive_multiplier: float = 1.0
     passive_condition: str = ""
     parameters: dict[str, float] = field(default_factory=dict)
@@ -133,6 +153,7 @@ class CombatAction:
     radius: float = 0.0
     duration: float = 0.0
     max_distance: float = 0.0
+    projectile_speed: float = 0.0
     metadata: dict[str, float | int | str] = field(default_factory=dict)
 
 
@@ -144,15 +165,22 @@ class AbilityEffect:
     kind: str
     owner_id: int
     position: Vector2
+    # 前後位置由同一幀的移動與碰撞共用，避免圖像與命中各算一條路徑。
+    previous_position: Vector2 = field(default_factory=Vector2)
     direction: Vector2 = field(default_factory=lambda: Vector2(1.0, 0.0))
     damage: float = 0.0
     radius: float = 0.0
     remaining: float = 0.0
     max_distance: float = 0.0
-    speed: float = 0.0
+    projectile_speed: float = 0.0
     distance_travelled: float = 0.0
     tick_timer: float = 0.0
     returning: bool = False
+    # 控場地雷未落地前為 False；其他效果維持預設 True。
+    armed: bool = True
+    # 命中結果固定保存，讓目標移動後提示仍停留在實際碰撞位置。
+    impact_position: Vector2 | None = None
+    impact_status: str = ""
     hit_target_ids: set[tuple[str, int]] = field(default_factory=set)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -203,6 +231,7 @@ class PlayerState:
     slow_multiplier: float = 1.0
     root_timer: float = 0.0
     primary_charge: float = 0.0
+    ability_input_blocked: bool = False
     last_damage_time: float = 0.0
 
     @property

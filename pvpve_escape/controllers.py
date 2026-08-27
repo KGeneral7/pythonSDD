@@ -15,8 +15,14 @@ class InputState:
     aim_direction: Vector2 = field(default_factory=lambda: Vector2(1.0, 0.0))
     primary_pressed: bool = False
     primary_held: bool = False
+    primary_released: bool = False
     ultimate_pressed: bool = False
+    ultimate_held: bool = False
+    ultimate_released: bool = False
     tactical_pressed: bool = False
+    tactical_held: bool = False
+    tactical_released: bool = False
+    focus_lost: bool = False
     quit_requested: bool = False
     restart_requested: bool = False
     start_requested: bool = False
@@ -31,6 +37,11 @@ class InputState:
 class HumanController:
     """讀取人類玩家的鍵盤與滑鼠，並產生單幀輸入。"""
 
+    def __init__(self) -> None:
+        self._focused = True
+        self._held = {"primary": False, "ultimate": False, "tactical": False}
+        self._blocked_until_release = {"primary": False, "ultimate": False, "tactical": False}
+
     def collect(
         self,
         events: list[pygame.event.Event],
@@ -39,14 +50,38 @@ class HumanController:
         phase: MatchPhase,
     ) -> InputState:
         state = InputState()
+        button_down = {"primary": False, "ultimate": False, "tactical": False}
+        button_up = {"primary": False, "ultimate": False, "tactical": False}
         for event in events:
             if event.type == pygame.QUIT:
                 state.quit_requested = True
-            if event.type == pygame.MOUSEBUTTONDOWN and phase == MatchPhase.PLAYING:
+            if event.type == pygame.WINDOWFOCUSLOST:
+                self._focused = False
+                state.focus_lost = True
+                for name in self._held:
+                    self._held[name] = False
+                    self._blocked_until_release[name] = True
+                continue
+            if event.type == pygame.WINDOWFOCUSGAINED:
+                self._focused = True
+                continue
+            if event.type == pygame.MOUSEBUTTONDOWN and phase == MatchPhase.PLAYING and self._focused:
                 if event.button == 1:
-                    state.primary_pressed = True
+                    button_down["primary"] = True
                 elif event.button == 3:
-                    state.ultimate_pressed = True
+                    button_down["ultimate"] = True
+                continue
+            if event.type == pygame.MOUSEBUTTONUP and phase == MatchPhase.PLAYING:
+                if event.button == 1:
+                    button_up["primary"] = True
+                elif event.button == 3:
+                    button_up["ultimate"] = True
+                continue
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE and phase == MatchPhase.PLAYING and self._focused:
+                button_down["tactical"] = True
+                continue
+            if event.type == pygame.KEYUP and event.key == pygame.K_SPACE:
+                button_up["tactical"] = True
                 continue
             if event.type != pygame.KEYDOWN:
                 continue
@@ -58,10 +93,6 @@ class HumanController:
                 state.start_requested = True
             elif event.key == pygame.K_F1 and phase == MatchPhase.PLAYING:
                 state.developer_toggle = True
-            elif event.key == pygame.K_SPACE and phase == MatchPhase.PLAYING:
-                # 以事件旗標保留按鍵當幀的配件輸入，不只依賴 get_pressed() 的
-                # 時序，避免快速點按 Space 時配件完全沒有觸發。
-                state.tactical_pressed = True
             elif event.key == pygame.K_m and phase == MatchPhase.PLAYING:
                 state.developer_place = True
             elif event.key == pygame.K_n and phase == MatchPhase.PLAYING:
@@ -79,6 +110,8 @@ class HumanController:
                 state.developer_dummy_id = event.key - pygame.K_1 + 1
 
         if phase != MatchPhase.PLAYING:
+            for name in self._held:
+                self._held[name] = False
             return state
 
         keys = pygame.key.get_pressed()
@@ -91,8 +124,44 @@ class HumanController:
         if player_position is not None:
             state.aim_direction = (mouse_world - player_position).normalized()
         buttons = pygame.mouse.get_pressed(3)
-        state.primary_held = bool(buttons[0])
-        state.tactical_pressed = state.tactical_pressed or bool(keys[pygame.K_SPACE])
+        polled = {
+            "primary": bool(buttons[0]),
+            "ultimate": bool(buttons[2]),
+            "tactical": bool(keys[pygame.K_SPACE]),
+        }
+
+        def resolve_button(name: str) -> tuple[bool, bool, bool]:
+            previous = self._held[name]
+            if not self._focused or state.focus_lost:
+                current = False
+                pressed = False
+                released = False
+            else:
+                if self._blocked_until_release[name]:
+                    # 失焦時按住的鍵必須先真正放開，回到視窗後才可再次觸發。
+                    if button_up[name] or not polled[name]:
+                        self._blocked_until_release[name] = False
+                    current = False
+                    # 這個放開只用來解除失焦封鎖，不得被世界更新解讀成
+                    # 一次新的施放，避免回到視窗時補發技能。
+                    pressed = False
+                    released = False
+                else:
+                    current = polled[name]
+                    # 測試環境或事件與輪詢不同步時，按下事件本身仍代表
+                    # 本幀已進入按住；同幀的放開則優先回到未按住。
+                    if button_down[name] and not button_up[name]:
+                        current = True
+                    if button_up[name]:
+                        current = False
+                    pressed = button_down[name] or (current and not previous)
+                    released = button_up[name] or (previous and not current)
+            self._held[name] = current
+            return pressed, current, released
+
+        state.primary_pressed, state.primary_held, state.primary_released = resolve_button("primary")
+        state.ultimate_pressed, state.ultimate_held, state.ultimate_released = resolve_button("ultimate")
+        state.tactical_pressed, state.tactical_held, state.tactical_released = resolve_button("tactical")
         return state
 
 

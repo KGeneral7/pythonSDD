@@ -2,6 +2,7 @@
 
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
@@ -57,6 +58,61 @@ class TraditionalChineseFontTests(unittest.TestCase):
         self.assertTrue(mouse_state.ultimate_pressed)
         self.assertTrue(space_state.tactical_pressed)
 
+    def test_controller_exposes_press_hold_release_and_focus_loss_edges(self) -> None:
+        controller = HumanController()
+        player_position = Vector2(500, 500)
+
+        with patch("pygame.mouse.get_pressed", return_value=(True, False, False)):
+            pressed = controller.collect(
+                [pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1)],
+                Vector2(),
+                player_position,
+                MatchPhase.PLAYING,
+            )
+            held = controller.collect([], Vector2(), player_position, MatchPhase.PLAYING)
+        with patch("pygame.mouse.get_pressed", return_value=(False, False, False)):
+            released = controller.collect(
+                [pygame.event.Event(pygame.MOUSEBUTTONUP, button=1)],
+                Vector2(),
+                player_position,
+                MatchPhase.PLAYING,
+            )
+
+        self.assertTrue(pressed.primary_pressed)
+        self.assertTrue(pressed.primary_held)
+        self.assertFalse(pressed.primary_released)
+        self.assertTrue(held.primary_held)
+        self.assertFalse(held.primary_pressed)
+        self.assertTrue(released.primary_released)
+        self.assertFalse(released.primary_held)
+
+        with patch("pygame.mouse.get_pressed", return_value=(True, False, False)):
+            controller.collect(
+                [pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1)],
+                Vector2(),
+                player_position,
+                MatchPhase.PLAYING,
+            )
+        focus_lost = controller.collect(
+            [pygame.event.Event(pygame.WINDOWFOCUSLOST)],
+            Vector2(),
+            player_position,
+            MatchPhase.PLAYING,
+        )
+        self.assertTrue(focus_lost.focus_lost)
+        self.assertFalse(focus_lost.primary_held)
+        self.assertFalse(focus_lost.primary_released)
+
+        with patch("pygame.mouse.get_pressed", return_value=(False, False, False)):
+            after_focus_release = controller.collect(
+                [pygame.event.Event(pygame.MOUSEBUTTONUP, button=1)],
+                Vector2(),
+                player_position,
+                MatchPhase.PLAYING,
+            )
+        self.assertFalse(after_focus_release.primary_pressed)
+        self.assertFalse(after_focus_release.primary_released)
+
     def test_live_skill_input_changes_ultimate_and_control_state(self) -> None:
         controller = HumanController()
 
@@ -76,6 +132,8 @@ class TraditionalChineseFontTests(unittest.TestCase):
         )
         ultimate_state.aim_direction = Vector2(1, 0)
         update_match(ultimate_match, ultimate_state, 0.05)
+        ultimate_release = InputState(aim_direction=Vector2(1, 0), ultimate_released=True)
+        update_match(ultimate_match, ultimate_release, 0.05)
 
         control_match = create_match(selected_tactical=TacticalId.CONTROL)
         control_match.monsters = []
@@ -92,6 +150,8 @@ class TraditionalChineseFontTests(unittest.TestCase):
         )
         control_state.aim_direction = Vector2(1, 0)
         update_match(control_match, control_state, 0.05)
+        control_release = InputState(aim_direction=Vector2(1, 0), tactical_released=True)
+        update_match(control_match, control_release, 0.05)
 
         self.assertLess(ultimate_target.health, ultimate_target.max_health)
         self.assertEqual(control_target.slow_multiplier, 0.6)
@@ -108,15 +168,24 @@ class TraditionalChineseFontTests(unittest.TestCase):
         target.position = Vector2(650, 260)
         target_health = target.health
 
-        state = controller.collect(
-            [pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1)],
-            match.camera.position,
-            sniper.position,
-            MatchPhase.PLAYING,
-        )
-        state.aim_direction = Vector2(1, 0)
-        update_match(match, state, 0.05)
-        update_match(match, state.__class__(aim_direction=Vector2(1, 0)), 0.05)
+        with patch("pygame.mouse.get_pressed", side_effect=[(True, False, False), (False, False, False)]):
+            state = controller.collect(
+                [pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1)],
+                match.camera.position,
+                sniper.position,
+                MatchPhase.PLAYING,
+            )
+            state.aim_direction = Vector2(1, 0)
+            update_match(match, state, 0.05)
+            release = controller.collect(
+                [pygame.event.Event(pygame.MOUSEBUTTONUP, button=1)],
+                match.camera.position,
+                sniper.position,
+                MatchPhase.PLAYING,
+            )
+        release.aim_direction = Vector2(1, 0)
+        update_match(match, release, 0.05)
+        update_match(match, InputState(aim_direction=Vector2(1, 0)), 0.05)
 
         self.assertLess(target.health, target_health)
         impact = next(effect for effect in match.effects if effect.kind == "sniper_line")
@@ -233,6 +302,92 @@ class TraditionalChineseFontTests(unittest.TestCase):
         monster_point = (player_point[0] - 300, player_point[1])
         self.assertEqual(surface.get_at((player_point[0], player_point[1] - 25))[:3], config.TEXT_COLOR)
         self.assertEqual(surface.get_at((monster_point[0] + 19, monster_point[1]))[:3], config.WARNING_COLOR)
+
+    def test_hold_preview_is_visible_for_each_role_without_mutating_match(self) -> None:
+        for role in CharacterId:
+            match = create_match(role)
+            for other in match.players[1:]:
+                other.alive = False
+            owner = match.players[0]
+            before = (owner.ammo, owner.primary_cooldown, owner.ultimate_energy, len(match.effects))
+            surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+            rendering.draw_match(
+                surface,
+                match,
+                InputState(aim_direction=Vector2(1, 0), primary_pressed=True, primary_held=True),
+            )
+            guide_pixels = sum(
+                surface.get_at((x, y))[:3] in {config.AIM_GUIDE_COLOR, config.AIM_GUIDE_SECONDARY_COLOR}
+                for x in range(surface.get_width())
+                for y in range(surface.get_height())
+            )
+            self.assertGreater(guide_pixels, 0, role)
+            self.assertEqual((owner.ammo, owner.primary_cooldown, owner.ultimate_energy, len(match.effects)), before, role)
+
+    def test_preview_priority_and_invalid_state_are_observable(self) -> None:
+        match = create_match(CharacterId.BREACHER)
+        owner = match.players[0]
+        owner.ammo = 0
+        owner.ultimate_energy = 0.0
+        input_state = InputState(
+            aim_direction=Vector2(1, 0),
+            primary_held=True,
+            tactical_held=True,
+            ultimate_held=True,
+        )
+        self.assertEqual(rendering._preview_slot(input_state), "ultimate")
+        surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+        rendering.draw_match(surface, match, input_state)
+        invalid_pixels = sum(
+            surface.get_at((x, y))[:3] == config.AIM_GUIDE_INVALID_COLOR
+            for x in range(surface.get_width())
+            for y in range(surface.get_height())
+        )
+        self.assertGreater(invalid_pixels, 0)
+        self.assertEqual(match.effects, [])
+
+    def test_control_preview_endpoint_matches_released_control_zone(self) -> None:
+        match = create_match(CharacterId.CONTROLLER, TacticalId.CONTROL)
+        owner = match.players[0]
+        owner.position = Vector2(500, 500)
+        guide = rendering.build_aim_guide(owner, "tactical", Vector2(1, 0))
+        update_match(
+            match,
+            InputState(aim_direction=Vector2(1, 0), tactical_released=True),
+            0.01,
+        )
+        effect = next(effect for effect in match.effects if effect.kind == "control_zone")
+        self.assertEqual(effect.position.tuple(), guide.end.tuple())
+        self.assertEqual(effect.projectile_speed, 0.0)
+
+    def test_flying_effect_render_data_uses_previous_position_and_mine_arming(self) -> None:
+        match = create_match(CharacterId.SNIPER)
+        owner = match.players[0]
+        for other in match.players[1:]:
+            other.alive = False
+        action = create_primary_action(owner, Vector2(1, 0))
+        self.assertIsNotNone(action)
+        _apply_action(match, action)
+        update_match(match, InputState(), 0.05)
+        sniper_effect = next(effect for effect in match.effects if effect.kind == "sniper_line")
+        self.assertEqual(sniper_effect.previous_position.tuple(), (500.0, 260.0))
+        self.assertNotEqual(sniper_effect.position.tuple(), sniper_effect.previous_position.tuple())
+        rendering.draw_match(pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT)), match)
+
+        mine_match = create_match(CharacterId.CONTROLLER)
+        mine_owner = mine_match.players[0]
+        for other in mine_match.players[1:]:
+            other.alive = False
+        mine_action = create_primary_action(mine_owner, Vector2(1, 0))
+        self.assertIsNotNone(mine_action)
+        _apply_action(mine_match, mine_action)
+        update_match(mine_match, InputState(), 0.05)
+        mine = next(effect for effect in mine_match.effects if effect.kind == "mine")
+        self.assertFalse(mine.armed)
+        for _ in range(14):
+            update_match(mine_match, InputState(), 0.05)
+        self.assertTrue(mine.armed)
+        rendering.draw_match(pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT)), mine_match)
 
 
 if __name__ == "__main__":

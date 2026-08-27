@@ -2,6 +2,7 @@
 
 import unittest
 
+from pvpve_escape import config
 from pvpve_escape.controllers import InputState
 from pvpve_escape.characters import (
     calculate_attack_damage,
@@ -9,6 +10,7 @@ from pvpve_escape.characters import (
     create_primary_action,
     create_tactical_action,
     create_ultimate_action,
+    get_character_definition,
     get_all_character_definitions,
 )
 from pvpve_escape.models import CharacterId, MatchPhase, TacticalId, Vector2
@@ -26,7 +28,7 @@ from pvpve_escape.rules import (
     resolve_extraction_winner,
     resolve_match_timeout,
 )
-from pvpve_escape.world import apply_damage, clamp_position, create_match, update_monsters, update_world
+from pvpve_escape.world import _apply_action, apply_damage, clamp_position, create_match, update_monsters, update_world
 
 
 class PlayerSetupTests(unittest.TestCase):
@@ -85,7 +87,7 @@ class CombatRuleTests(unittest.TestCase):
             apply_monster_kill_upgrade(player)
         self.assertEqual(player.upgrade_stacks, 10)
         self.assertEqual(calculate_upgrade_multiplier(player.upgrade_stacks), 1.3)
-        self.assertAlmostEqual(player.max_health, 130.0)
+        self.assertAlmostEqual(player.max_health, 143.0)
 
     def test_damage_adds_energy_and_final_monster_hit_gives_only_one_upgrade(self) -> None:
         match = create_match()
@@ -171,40 +173,48 @@ class CharacterDefinitionTests(unittest.TestCase):
             match.monsters = []
             for other in match.players[1:]:
                 other.alive = False
-            input_state = InputState(
-                aim_direction=Vector2(1, 0),
-                primary_pressed=True,
-                primary_held=True,
-            )
-            fired = False
-            for _ in range(15):
-                update_world(match, {0: input_state}, 0.05)
-                fired = fired or expected_effect in {effect.kind for effect in match.effects}
+            if role == CharacterId.SIPHONER:
+                update_world(
+                    match,
+                    {0: InputState(aim_direction=Vector2(1, 0), primary_pressed=True, primary_held=True)},
+                    0.05,
+                )
+            else:
+                update_world(
+                    match,
+                    {0: InputState(aim_direction=Vector2(1, 0), primary_pressed=True, primary_held=True)},
+                    0.05,
+                )
+                update_world(
+                    match,
+                    {0: InputState(aim_direction=Vector2(1, 0), primary_released=True)},
+                    0.05,
+                )
+            fired = expected_effect in {effect.kind for effect in match.effects}
             self.assertTrue(fired, role)
 
-    def test_sniper_and_siphoner_can_fire_from_a_single_click(self) -> None:
-        expected_effects = {
-            CharacterId.SNIPER: "sniper_line",
-            CharacterId.SIPHONER: "beam",
-        }
+    def test_sniper_quick_click_fires_but_siphoner_quick_click_does_not_channel(self) -> None:
+        match = create_match(CharacterId.SNIPER)
+        match.monsters = []
+        for other in match.players[1:]:
+            other.alive = False
+        update_world(
+            match,
+            {0: InputState(aim_direction=Vector2(1, 0), primary_pressed=True, primary_released=True)},
+            0.05,
+        )
+        self.assertIn("sniper_line", {effect.kind for effect in match.effects})
 
-        for role, expected_effect in expected_effects.items():
-            match = create_match(role)
-            match.monsters = []
-            for other in match.players[1:]:
-                other.alive = False
-            update_world(
-                match,
-                {
-                    0: InputState(
-                        aim_direction=Vector2(1, 0),
-                        primary_pressed=True,
-                        primary_held=False,
-                    )
-                },
-                0.05,
-            )
-            self.assertIn(expected_effect, {effect.kind for effect in match.effects}, role)
+        match = create_match(CharacterId.SIPHONER)
+        match.monsters = []
+        for other in match.players[1:]:
+            other.alive = False
+        update_world(
+            match,
+            {0: InputState(aim_direction=Vector2(1, 0), primary_pressed=True, primary_released=True)},
+            0.05,
+        )
+        self.assertNotIn("beam", {effect.kind for effect in match.effects})
 
     def test_sniper_projectile_hits_the_first_target_on_its_visible_path(self) -> None:
         match = create_match(CharacterId.SNIPER)
@@ -381,6 +391,382 @@ class CharacterDefinitionTests(unittest.TestCase):
         self.assertGreater(calculate_attack_damage(sniper, 600), calculate_attack_damage(sniper, 200))
         controller = create_match(CharacterId.CONTROLLER).players[0]
         self.assertEqual(calculate_control_duration(controller, 2.0), 3.0)
+
+
+class AimAndProjectileRuleTests(unittest.TestCase):
+    def _solo_match(self, role: CharacterId, tactical: TacticalId = TacticalId.DASH):
+        match = create_match(role, tactical)
+        match.monsters = []
+        for other in match.players[1:]:
+            other.alive = False
+        match.players[0].position = Vector2(500, 500)
+        match.players[0].spawn_position = Vector2(500, 500)
+        match.players[0].ability_input_blocked = False
+        return match
+
+    def _target_match(self, role: CharacterId, target_offset: Vector2):
+        match = create_match(role)
+        match.monsters = []
+        owner = match.players[0]
+        target = match.players[1]
+        owner.position = Vector2(500, 500)
+        owner.spawn_position = owner.position.copy()
+        target.position = owner.position + target_offset
+        target.max_health = 120.0
+        target.health = 120.0
+        target.radius = 40.0
+        for other in match.players[2:]:
+            other.alive = False
+        return match, owner, target
+
+    def test_character_and_monster_balance_table_is_centralized(self) -> None:
+        expected = {
+            CharacterId.BREACHER: (110.0, 7.0, 200.0, 900.0),
+            CharacterId.SNIPER: (80.0, 50.0, 1000.0, 1400.0),
+            CharacterId.GUARDIAN: (115.0, 30.0, 125.0, 0.0),
+            CharacterId.HUNTER: (95.0, 24.0, 340.0, 520.0),
+            CharacterId.CONTROLLER: (90.0, 20.0, 460.0, 650.0),
+            CharacterId.SIPHONER: (105.0, 6.0, 280.0, 0.0),
+        }
+        for role, values in expected.items():
+            definition = get_character_definition(role)
+            self.assertEqual(
+                (definition.base_health, definition.primary_damage, definition.primary_range, definition.projectile_speed),
+                values,
+            )
+            player = create_match(role).players[0]
+            expected_health = values[0] * (1.2 if role == CharacterId.GUARDIAN else 1.0)
+            self.assertEqual(player.max_health, expected_health)
+
+        self.assertEqual(config.MONSTER_HEALTH, 85.0)
+        self.assertEqual(config.MONSTER_SPEED, 95.0)
+        self.assertEqual(config.MONSTER_CONTACT_DAMAGE, 12.0)
+        self.assertEqual(config.MONSTER_ATTACK_INTERVAL, 0.8)
+        self.assertEqual(config.MONSTER_RADIUS, 16.0)
+        self.assertEqual(config.MONSTER_RESPAWN_DELAY, 6.0)
+        self.assertEqual(len(create_match().monsters), config.MONSTER_CAMP_COUNT * config.MONSTERS_PER_CAMP)
+
+    def test_non_channel_primary_only_casts_on_release(self) -> None:
+        expected_effects = {
+            CharacterId.BREACHER: "breach_cone",
+            CharacterId.SNIPER: "sniper_line",
+            CharacterId.GUARDIAN: "guardian_arc",
+            CharacterId.HUNTER: "boomerang",
+            CharacterId.CONTROLLER: "mine",
+        }
+        for role, expected_effect in expected_effects.items():
+            match = self._solo_match(role)
+            owner = match.players[0]
+            ammo_before = owner.ammo
+            cooldown_before = owner.primary_cooldown
+            update_world(
+                match,
+                {0: InputState(aim_direction=Vector2(1, 0), primary_pressed=True, primary_held=True)},
+                0.10,
+            )
+            self.assertEqual(match.effects, [], role)
+            self.assertEqual(owner.ammo, ammo_before, role)
+            self.assertEqual(owner.primary_cooldown, cooldown_before, role)
+
+            update_world(
+                match,
+                {0: InputState(aim_direction=Vector2(1, 0), primary_released=True)},
+                0.01,
+            )
+            self.assertIn(expected_effect, {effect.kind for effect in match.effects}, role)
+            self.assertEqual(owner.ammo, ammo_before - 1, role)
+            self.assertGreater(owner.primary_cooldown, 0.0, role)
+
+    def test_non_channel_slots_and_quick_taps_are_single_casts(self) -> None:
+        expected = {
+            "primary": {
+                CharacterId.BREACHER: "breach_cone",
+                CharacterId.SNIPER: "sniper_line",
+                CharacterId.GUARDIAN: "guardian_arc",
+                CharacterId.HUNTER: "boomerang",
+                CharacterId.CONTROLLER: "mine",
+            },
+            "ultimate": {
+                role: kind
+                for role, kind in {
+                    CharacterId.BREACHER: "breach_burst",
+                    CharacterId.SNIPER: "sniper_ultimate_line",
+                    CharacterId.GUARDIAN: "guardian_guard",
+                    CharacterId.HUNTER: "hunter_dash",
+                    CharacterId.CONTROLLER: "gravity_cage",
+                    CharacterId.SIPHONER: "siphon_burst",
+                }.items()
+            },
+            "tactical": {
+                CharacterId.BREACHER: "dash",
+                CharacterId.SNIPER: "dash",
+                CharacterId.GUARDIAN: "dash",
+                CharacterId.HUNTER: "dash",
+                CharacterId.CONTROLLER: "dash",
+                CharacterId.SIPHONER: "dash",
+            },
+        }
+        fields = {
+            "primary": ("primary_pressed", "primary_released"),
+            "ultimate": ("ultimate_pressed", "ultimate_released"),
+            "tactical": ("tactical_pressed", "tactical_released"),
+        }
+        for slot, role_effects in expected.items():
+            for role, expected_effect in role_effects.items():
+                for _ in range(20):
+                    tactical = TacticalId.DASH
+                    match = self._solo_match(role, tactical)
+                    owner = match.players[0]
+                    if slot == "ultimate":
+                        owner.ultimate_energy = 100.0
+                    pressed, released = fields[slot]
+                    input_state = InputState(
+                        aim_direction=Vector2(1, 0),
+                        **{pressed: True, released: True},
+                    )
+                    update_world(match, {0: input_state}, 0.01)
+                    self.assertIn(expected_effect, {effect.kind for effect in match.effects}, (slot, role, _))
+                    if slot == "ultimate":
+                        self.assertEqual(owner.ultimate_energy, 0.0)
+                    elif slot == "tactical":
+                        self.assertEqual(owner.tactical_cooldown, 12.0)
+
+    def test_hold_release_resource_checks_and_siphoner_channel(self) -> None:
+        # 大招與配件按住只預覽，放開才建立效果並消耗資源。
+        for role in CharacterId:
+            for slot in ("ultimate", "tactical"):
+                match = self._solo_match(role)
+                owner = match.players[0]
+                owner.ultimate_energy = 100.0
+                held = InputState(
+                    aim_direction=Vector2(1, 0),
+                    ultimate_pressed=slot == "ultimate",
+                    ultimate_held=slot == "ultimate",
+                    tactical_pressed=slot == "tactical",
+                    tactical_held=slot == "tactical",
+                )
+                update_world(match, {0: held}, 0.05)
+                self.assertEqual(match.effects, [], (role, slot))
+                self.assertEqual(owner.ultimate_energy, 100.0, (role, slot))
+                self.assertEqual(owner.tactical_cooldown, 0.0, (role, slot))
+                released = InputState(
+                    aim_direction=Vector2(1, 0),
+                    ultimate_released=slot == "ultimate",
+                    tactical_released=slot == "tactical",
+                )
+                update_world(match, {0: released}, 0.01)
+                self.assertTrue(match.effects, (role, slot))
+
+        for _ in range(20):
+            match = self._target_match(CharacterId.SIPHONER, Vector2(100, 0))[0]
+            owner, target = match.players[0], match.players[1]
+            health_before = target.health
+            update_world(
+                match,
+                {0: InputState(aim_direction=Vector2(1, 0), primary_pressed=True, primary_held=True)},
+                0.05,
+            )
+            for _ in range(23):
+                update_world(match, {0: InputState(aim_direction=Vector2(1, 0), primary_held=True)}, 0.05)
+            self.assertLess(target.health, health_before)
+            self.assertFalse(any(effect.kind == "beam" for effect in match.effects))
+            update_world(match, {0: InputState(primary_released=True)}, 0.01)
+            self.assertFalse(any(effect.kind == "beam" for effect in match.effects))
+
+        focus_match = self._target_match(CharacterId.SIPHONER, Vector2(100, 0))[0]
+        update_world(focus_match, {0: InputState(primary_held=True)}, 0.05)
+        self.assertTrue(any(effect.kind == "beam" for effect in focus_match.effects))
+        update_world(focus_match, {0: InputState(focus_lost=True)}, 0.01)
+        self.assertFalse(any(effect.kind == "beam" for effect in focus_match.effects))
+
+        death_match = self._target_match(CharacterId.SIPHONER, Vector2(100, 0))[0]
+        update_world(death_match, {0: InputState(primary_held=True)}, 0.05)
+        apply_damage(death_match, 1, "player", 0, 999.0)
+        update_world(death_match, {0: InputState(primary_held=True)}, 0.01)
+        self.assertFalse(any(effect.kind == "beam" for effect in death_match.effects))
+
+    def test_insufficient_resources_never_cast_on_release(self) -> None:
+        match = self._solo_match(CharacterId.BREACHER)
+        owner = match.players[0]
+        owner.ammo = 0
+        update_world(match, {0: InputState(primary_released=True)}, 0.01)
+        self.assertEqual(match.effects, [])
+        self.assertEqual(owner.ammo, 0)
+        self.assertEqual(owner.primary_cooldown, 0.0)
+
+        owner.ultimate_energy = 99.0
+        update_world(match, {0: InputState(ultimate_released=True)}, 0.01)
+        self.assertEqual(match.effects, [])
+        self.assertEqual(owner.ultimate_energy, 99.0)
+
+        owner.tactical_cooldown = 1.0
+        cooldown_before = owner.tactical_cooldown
+        update_world(match, {0: InputState(tactical_released=True)}, 0.01)
+        self.assertEqual(match.effects, [])
+        self.assertLess(owner.tactical_cooldown, cooldown_before)
+        self.assertGreater(owner.tactical_cooldown, 0.0)
+
+    def test_projectile_speed_snapshots_and_non_flying_effects(self) -> None:
+        expected_speed = {
+            CharacterId.BREACHER: 900.0,
+            CharacterId.SNIPER: 1400.0,
+            CharacterId.GUARDIAN: 0.0,
+            CharacterId.HUNTER: 520.0,
+            CharacterId.CONTROLLER: 650.0,
+            CharacterId.SIPHONER: 0.0,
+        }
+        expected_kind = {
+            CharacterId.BREACHER: "breach_pellet",
+            CharacterId.SNIPER: "sniper_line",
+            CharacterId.GUARDIAN: "guardian_arc",
+            CharacterId.HUNTER: "boomerang",
+            CharacterId.CONTROLLER: "mine",
+            CharacterId.SIPHONER: "beam",
+        }
+        for role in CharacterId:
+            match = self._solo_match(role)
+            action = create_primary_action(match.players[0], Vector2(1, 0))
+            self.assertIsNotNone(action)
+            self.assertEqual(action.projectile_speed, expected_speed[role])
+            _apply_action(match, action)
+            effects = [effect for effect in match.effects if effect.kind == expected_kind[role]]
+            self.assertTrue(effects, role)
+            if role == CharacterId.BREACHER:
+                self.assertEqual(len(effects), 5)
+                self.assertTrue(all(effect.projectile_speed == 900.0 for effect in effects))
+            else:
+                self.assertEqual(effects[0].projectile_speed, expected_speed[role])
+            self.assertTrue(all(not hasattr(effect, "speed") for effect in effects))
+            self.assertTrue(all("speed" not in effect.metadata for effect in effects))
+            if role == CharacterId.CONTROLLER:
+                self.assertFalse(effects[0].armed)
+
+    def test_projectiles_move_at_configured_speed_for_ten_frames(self) -> None:
+        expected = {
+            CharacterId.BREACHER: (900.0, "breach_pellet"),
+            CharacterId.SNIPER: (1400.0, "sniper_line"),
+            CharacterId.HUNTER: (520.0, "boomerang"),
+            CharacterId.CONTROLLER: (650.0, "mine"),
+        }
+        for role, (speed, kind) in expected.items():
+            match = self._solo_match(role)
+            action = create_primary_action(match.players[0], Vector2(1, 0))
+            self.assertIsNotNone(action)
+            _apply_action(match, action)
+            effect = next(effect for effect in match.effects if effect.kind == kind)
+            start = effect.position.copy()
+            for frame in range(1, 11):
+                update_world(match, {0: InputState()}, 0.05)
+                expected_distance = min(speed * 0.05 * frame, effect.max_distance)
+                self.assertAlmostEqual(start.distance_to(effect.position), expected_distance, delta=0.5, msg=(role, frame))
+                if role == CharacterId.CONTROLLER and frame < 10:
+                    self.assertFalse(effect.armed)
+
+    def test_projectile_sweeps_and_controller_mine_only_arms_at_landing(self) -> None:
+        for role in (CharacterId.BREACHER, CharacterId.SNIPER, CharacterId.HUNTER):
+            for _ in range(20):
+                match, owner, target = self._target_match(role, Vector2(50, 0))
+                health_before = target.health
+                action = create_primary_action(owner, Vector2(1, 0))
+                self.assertIsNotNone(action)
+                _apply_action(match, action)
+                for _ in range(4):
+                    update_world(match, {0: InputState()}, 0.05)
+                self.assertLess(target.health, health_before, role)
+
+        for _ in range(20):
+            match, owner, target = self._target_match(CharacterId.CONTROLLER, Vector2(100, 0))
+            health_before = target.health
+            action = create_primary_action(owner, Vector2(1, 0))
+            self.assertIsNotNone(action)
+            _apply_action(match, action)
+            update_world(match, {0: InputState()}, 0.10)
+            mine = next(effect for effect in match.effects if effect.kind == "mine")
+            self.assertFalse(mine.armed)
+            self.assertEqual(target.health, health_before)
+            self.assertEqual(target.slow_multiplier, 1.0)
+
+            # 目標不在地雷中心，但在落地後 100 半徑控制區內；
+            # 這能區分「投射物碰撞半徑」與「落地效果半徑」。
+            target.position = owner.position + Vector2(540, 0)
+            for _ in range(14):
+                update_world(match, {0: InputState()}, 0.05)
+            self.assertLess(target.health, health_before)
+            self.assertLess(target.slow_multiplier, 1.0)
+
+    def test_boomerang_can_damage_the_same_target_once_on_each_direction(self) -> None:
+        match, owner, target = self._target_match(CharacterId.HUNTER, Vector2(100, 0))
+        action = create_primary_action(owner, Vector2(1, 0))
+        self.assertIsNotNone(action)
+        _apply_action(match, action)
+        for _ in range(5):
+            update_world(match, {0: InputState()}, 0.05)
+        health_after_outbound = target.health
+        self.assertLess(health_after_outbound, target.max_health)
+
+        for _ in range(18):
+            update_world(match, {0: InputState()}, 0.05)
+        self.assertLess(target.health, health_after_outbound)
+
+    def test_damage_order_applies_shield_then_reduction_and_final_clamp(self) -> None:
+        match = create_match(CharacterId.SNIPER)
+        target = match.players[1]
+        target.max_health = 100.0
+        target.health = 100.0
+        target.shield_remaining = 30.0
+        target.shield_timer = 2.0
+        target.damage_reduction = 0.5
+        target.damage_reduction_timer = 2.0
+        event = apply_damage(match, 0, "player", target.player_id, 100.0)
+        self.assertIsNotNone(event)
+        self.assertEqual(event.effective_damage, 35.0)
+        self.assertEqual(target.health, 65.0)
+        self.assertEqual(target.shield_remaining, 0.0)
+
+    def test_fixed_ttk_ranges_use_the_new_role_values(self) -> None:
+        def run_burst(role: CharacterId, distance: float, step: float, repeat: int) -> int:
+            match, owner, target = self._target_match(role, Vector2(distance, 0))
+            for hit in range(1, repeat + 1):
+                owner.ammo = owner.ammo_capacity
+                owner.primary_cooldown = 0.0
+                # 固定 TTK 夾具每次都把目標放回指定距離，排除守衛者
+                # 弧形攻擊的擊退對「全部命中」條件造成干擾。
+                target.position = owner.position + Vector2(distance, 0)
+                action = create_primary_action(owner, Vector2(1, 0))
+                self.assertIsNotNone(action)
+                _apply_action(match, action)
+                if role != CharacterId.GUARDIAN:
+                    for _ in range(max(1, round(step / 0.05))):
+                        update_world(match, {0: InputState()}, 0.05)
+                if not target.alive:
+                    return hit
+                match.effects.clear()
+            return repeat + 1
+
+        sniper_hits = run_burst(CharacterId.SNIPER, 500.0, 0.40, 5)
+        breacher_hits = run_burst(CharacterId.BREACHER, 50.0, 0.25, 5)
+        guardian_hits = run_burst(CharacterId.GUARDIAN, 50.0, 0.01, 5)
+        hunter_hits = run_burst(CharacterId.HUNTER, 100.0, 0.30, 5)
+        self.assertIn(sniper_hits, (2, 3))
+        self.assertIn(breacher_hits, (3, 4, 5))
+        self.assertIn(guardian_hits, (3, 4, 5))
+        self.assertIn(hunter_hits, (3, 4, 5))
+
+        match, owner, target = self._target_match(CharacterId.SIPHONER, Vector2(100, 0))
+        channels = 0
+        while target.alive and channels < 5:
+            owner.ammo = owner.ammo_capacity
+            owner.primary_cooldown = 0.0
+            match.effects.clear()
+            for frame in range(24):
+                update_world(
+                    match,
+                    {0: InputState(primary_pressed=frame == 0, primary_held=True, aim_direction=Vector2(1, 0))},
+                    0.05,
+                )
+            update_world(match, {0: InputState(primary_released=True)}, 0.01)
+            channels += 1
+        self.assertIn(channels, (2, 3, 4))
 
 
 class ExtractionRuleTests(unittest.TestCase):

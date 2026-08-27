@@ -7,8 +7,10 @@ import math
 import pygame
 
 from . import config
-from .characters import get_character_definition
-from .models import AbilityEffect, CharacterId, MatchPhase, MatchState, PlayerState, Vector2
+from .aiming import build_aim_guide
+from .characters import get_character_definition, get_tactical_definition
+from .controllers import InputState
+from .models import AimGuide, AbilityEffect, CharacterId, MatchPhase, MatchState, PlayerState, TacticalId, Vector2
 from .world import world_to_screen
 
 
@@ -29,6 +31,7 @@ _TEXT_FONT_PATH_DISCOVERED = False
 _TEXT_FONT_CACHE: dict[int, pygame.font.Font] = {}
 _PRIMARY_EFFECT_LABELS = {
     "breach_cone": "扇形散射",
+    "breach_pellet": "散射彈",
     "sniper_line": "狙擊子彈",
     "guardian_arc": "盾擊",
     "boomerang": "回旋飛刃",
@@ -103,6 +106,17 @@ def draw_text(
     surface.blit(image, rect)
 
 
+def _speed_label(player_or_definition: PlayerState | object) -> str:
+    definition = (
+        get_character_definition(player_or_definition.character_id)
+        if isinstance(player_or_definition, PlayerState)
+        else player_or_definition
+    )
+    if definition.projectile_speed <= 0:
+        return "近戰" if definition.character_id == CharacterId.GUARDIAN else "引導"
+    return f"{definition.projectile_speed:.0f}"
+
+
 def draw_selection(
     surface: pygame.Surface,
     selected_character_index: int,
@@ -134,7 +148,13 @@ def draw_selection(
         )
         draw_text(surface, f"{index + 1}. {definition.display_name}", (rect.x + 14, rect.y + 12), 28, config.ACCENT_COLOR if selected else config.TEXT_COLOR)
         draw_text(surface, definition.primary_kind, (rect.x + 14, rect.y + 46), 21, config.MUTED_TEXT_COLOR)
-        draw_text(surface, f"彈匣 {definition.ammo_capacity}｜補彈 {definition.ammo_recovery_interval:.2f}s", (rect.x + 14, rect.y + 78), 18, config.TEXT_COLOR)
+        pellet_text = ""
+        if definition.character_id == CharacterId.BREACHER:
+            pellet_text = "×5"
+        elif definition.character_id == CharacterId.SIPHONER:
+            pellet_text = "/0.15s"
+        draw_text(surface, f"生命 {definition.base_health:.0f}｜火力 {definition.primary_damage:.0f}{pellet_text}", (rect.x + 14, rect.y + 76), 17, config.TEXT_COLOR)
+        draw_text(surface, f"射程 {definition.primary_range:.0f}｜速度 {_speed_label(definition)}", (rect.x + 14, rect.y + 99), 17, config.TEXT_COLOR)
     tactics = get_all_tactical_definitions()
     draw_text(surface, "戰術配件", (70, 470), 28, config.WARNING_COLOR)
     for index, definition in enumerate(tactics):
@@ -306,6 +326,72 @@ def _draw_directional_wedge(
     pygame.draw.lines(surface, color, False, arc_points, 3)
 
 
+def _aim_guide_color(guide: AimGuide) -> tuple[int, int, int]:
+    if not guide.valid:
+        return config.AIM_GUIDE_INVALID_COLOR
+    return config.AIM_GUIDE_SECONDARY_COLOR if guide.ability_slot != "primary" else config.AIM_GUIDE_COLOR
+
+
+def _draw_aim_guide(surface: pygame.Surface, match: MatchState, guide: AimGuide) -> None:
+    """繪製按住技能時的世界座標預覽；預覽只讀取 AimGuide，不改變比賽狀態。"""
+
+    color = _aim_guide_color(guide)
+    origin = _screen_point(match, guide.origin)
+    end = _screen_point(match, guide.end)
+    if guide.shape == "wedge":
+        if guide.path_points:
+            points = [_screen_point(match, point) for point in guide.path_points]
+            for point in points:
+                pygame.draw.line(surface, color, origin, point, 3)
+            pygame.draw.lines(surface, color, False, points, 2)
+        else:
+            _draw_directional_wedge(
+                surface,
+                origin,
+                guide.direction,
+                guide.range,
+                guide.angle_degrees,
+                color,
+            )
+    elif guide.shape in {"line", "beam"}:
+        width = 7 if guide.shape == "beam" else 4
+        pygame.draw.line(surface, color, origin, end, width)
+        pygame.draw.line(surface, config.AIM_GUIDE_OUTLINE_COLOR, origin, end, 1)
+        pygame.draw.circle(surface, color, end, 9 if guide.shape == "beam" else 7, 2)
+    elif guide.shape == "path":
+        points = [_screen_point(match, point) for point in (guide.path_points or (guide.origin, guide.end))]
+        if len(points) >= 2:
+            pygame.draw.lines(surface, color, False, points, 4)
+            pygame.draw.circle(surface, color, points[-1], 10, 2)
+    elif guide.shape == "circle":
+        if origin != end:
+            pygame.draw.line(surface, color, origin, end, 2)
+        pygame.draw.circle(surface, color, end, max(8, round(guide.radius)), 3)
+        pygame.draw.circle(surface, config.AIM_GUIDE_OUTLINE_COLOR, end, 4, 1)
+
+
+def _preview_slot(input_state: InputState | None) -> str | None:
+    """依契約回傳目前預覽欄位：大招優先於配件，再優先於普攻。"""
+
+    if input_state is None:
+        return None
+    if input_state.ultimate_held:
+        return "ultimate"
+    if input_state.tactical_held:
+        return "tactical"
+    if input_state.primary_held:
+        return "primary"
+    return None
+
+
+def _preview_is_valid(player: PlayerState, slot: str) -> bool:
+    if slot == "ultimate":
+        return player.alive and player.ultimate_energy >= 100.0
+    if slot == "tactical":
+        return player.alive and player.tactical_cooldown <= 0.0
+    return player.alive and player.ammo > 0 and player.primary_cooldown <= 0.0
+
+
 def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: AbilityEffect) -> None:
     """以明確的幾何圖形繪製所有普攻、配件與大招效果。"""
 
@@ -333,13 +419,23 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
                 _polar_point(point, heading - half_angle + 2 * half_angle * fraction, effect.max_distance),
                 2,
             )
+    elif kind == "breach_pellet":
+        tail = effect.metadata.get("visible_start")
+        if not isinstance(tail, Vector2):
+            tail = effect.position - direction * 26
+        screen_tail = _screen_point(match, tail)
+        pygame.draw.line(surface, config.WARNING_COLOR, screen_tail, point, 4)
+        pygame.draw.circle(surface, config.WARNING_COLOR, point, 6)
+        pygame.draw.circle(surface, config.TEXT_COLOR, point, 6, 1)
     elif kind == "sniper_line":
         impact_blocked = bool(effect.metadata.get("impact_blocked", 0))
         impact_color = config.DANGER_COLOR if impact_blocked else config.EXTRACTION_COLOR
         if effect.metadata.get("impacted"):
-            pygame.draw.circle(surface, impact_color, point, 28, 4)
-            pygame.draw.line(surface, impact_color, (point[0] - 22, point[1] - 22), (point[0] + 22, point[1] + 22), 3)
-            pygame.draw.line(surface, impact_color, (point[0] + 22, point[1] - 22), (point[0] - 22, point[1] + 22), 3)
+            impact = effect.impact_position or effect.position
+            impact_point = _screen_point(match, impact)
+            pygame.draw.circle(surface, impact_color, impact_point, 28, 4)
+            pygame.draw.line(surface, impact_color, (impact_point[0] - 22, impact_point[1] - 22), (impact_point[0] + 22, impact_point[1] + 22), 3)
+            pygame.draw.line(surface, impact_color, (impact_point[0] + 22, impact_point[1] - 22), (impact_point[0] - 22, impact_point[1] + 22), 3)
         else:
             tail = effect.metadata.get("visible_start")
             if not isinstance(tail, Vector2):
@@ -364,7 +460,9 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
             config.TEXT_COLOR,
         )
     elif kind == "boomerang":
-        tail = effect.position - direction * 48
+        tail = effect.metadata.get("visible_start")
+        if not isinstance(tail, Vector2):
+            tail = effect.position - direction * 48
         pygame.draw.line(surface, config.ACCENT_COLOR, _screen_point(match, tail), point, 6)
         blade = [
             _oriented_point(point, direction, 23, 0),
@@ -376,14 +474,21 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
         pygame.draw.polygon(surface, config.TEXT_COLOR, blade, 2)
         pygame.draw.circle(surface, config.TEXT_COLOR, point, 6, 2)
     elif kind == "mine":
-        radius = max(24, round(effect.radius))
         owner = next((player for player in match.players if player.player_id == effect.owner_id), None)
-        if owner is not None:
-            pygame.draw.line(surface, config.WARNING_COLOR, _screen_point(match, owner.position), point, 2)
-        pygame.draw.circle(surface, config.WARNING_COLOR, point, radius, 3)
-        pygame.draw.circle(surface, config.WARNING_COLOR, point, max(7, radius // 5), 2)
-        pygame.draw.line(surface, config.WARNING_COLOR, (point[0] - 10, point[1] - 10), (point[0] + 10, point[1] + 10), 2)
-        pygame.draw.line(surface, config.WARNING_COLOR, (point[0] + 10, point[1] - 10), (point[0] - 10, point[1] + 10), 2)
+        if not effect.armed:
+            tail = effect.metadata.get("visible_start")
+            if not isinstance(tail, Vector2) and owner is not None:
+                tail = owner.position
+            if isinstance(tail, Vector2):
+                pygame.draw.line(surface, config.WARNING_COLOR, _screen_point(match, tail), point, 3)
+            pygame.draw.circle(surface, config.WARNING_COLOR, point, 9, 2)
+            pygame.draw.circle(surface, config.TEXT_COLOR, point, 4)
+        else:
+            radius = max(24, round(float(effect.metadata.get("area_radius", effect.radius))))
+            pygame.draw.circle(surface, config.WARNING_COLOR, point, radius, 3)
+            pygame.draw.circle(surface, config.WARNING_COLOR, point, max(7, radius // 5), 2)
+            pygame.draw.line(surface, config.WARNING_COLOR, (point[0] - 10, point[1] - 10), (point[0] + 10, point[1] + 10), 2)
+            pygame.draw.line(surface, config.WARNING_COLOR, (point[0] + 10, point[1] - 10), (point[0] - 10, point[1] + 10), 2)
     elif kind == "beam":
         end = effect.position + direction * effect.max_distance
         screen_end = _screen_point(match, end)
@@ -443,7 +548,7 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
         pygame.draw.line(surface, config.WARNING_COLOR, (point[0], point[1] - radius), (point[0], point[1] + radius), 2)
     label_color = config.TEXT_COLOR
     if kind == "sniper_line" and effect.metadata.get("impacted"):
-        status = str(effect.metadata.get("impact_status", "命中"))
+        status = effect.impact_status or str(effect.metadata.get("impact_status", "命中"))
         effective_damage = float(effect.metadata.get("impact_effective_damage", 0.0))
         if effect.metadata.get("impact_blocked"):
             label = f"狙擊被擋｜{status}"
@@ -499,7 +604,7 @@ def _draw_defense_status(surface: pygame.Surface, player: PlayerState, point: tu
     draw_text(surface, label, (point[0], point[1] + config.PLAYER_DRAW_RADIUS + 16), 12, color, True)
 
 
-def draw_world(surface: pygame.Surface, match: MatchState) -> None:
+def draw_world(surface: pygame.Surface, match: MatchState, input_state: InputState | None = None) -> None:
     """繪製地圖幾何圖形、玩家、怪物與撤離區。"""
 
     surface.fill(config.GROUND_COLOR)
@@ -574,13 +679,24 @@ def draw_world(surface: pygame.Surface, match: MatchState) -> None:
             player.root_timer,
         )
         _draw_defense_status(surface, player, point)
+    if match.players and input_state is not None:
+        player = match.players[0]
+        slot = _preview_slot(input_state)
+        if slot is not None and player.alive:
+            guide = build_aim_guide(
+                player,
+                slot,
+                player.aim_direction,
+                valid=_preview_is_valid(player, slot),
+            )
+            _draw_aim_guide(surface, match, guide)
 
 
-def draw_hud(surface: pygame.Surface, match: MatchState) -> None:
+def draw_hud(surface: pygame.Surface, match: MatchState, input_state: InputState | None = None) -> None:
     if not match.players:
         return
     player = match.players[0]
-    panel = pygame.Rect(16, 16, 420, 210)
+    panel = pygame.Rect(16, 16, 470, 276)
     pygame.draw.rect(surface, config.PANEL_COLOR, panel, border_radius=8)
     pygame.draw.rect(surface, config.PANEL_BORDER_COLOR, panel, 2, border_radius=8)
     from .characters import get_character_definition, get_tactical_definition
@@ -589,20 +705,29 @@ def draw_hud(surface: pygame.Surface, match: MatchState) -> None:
     tactical = get_tactical_definition(player.tactical_id)
     draw_text(surface, f"玩家 0｜{character.display_name}", (30, 27), 24, config.TEXT_COLOR)
     draw_text(surface, f"生命 {player.health:.0f}/{player.max_health:.0f}", (30, 58), 20, config.TEXT_COLOR)
-    draw_text(surface, f"彈藥 {player.ammo}/{player.ammo_capacity}｜補彈計時 {player.ammo_recovery_timer:.1f}s", (30, 84), 19, config.ACCENT_COLOR)
-    draw_text(surface, f"大招能量 {player.ultimate_energy:.0f}%", (30, 108), 19, config.ACCENT_COLOR)
+    pellet_text = "×5" if player.character_id == CharacterId.BREACHER else "/0.15s" if player.character_id == CharacterId.SIPHONER else ""
+    draw_text(surface, f"普攻火力 {character.primary_damage:.0f}{pellet_text}｜射程 {character.primary_range:.0f}", (30, 84), 18, config.ACCENT_COLOR)
+    draw_text(surface, f"飛行速度 {_speed_label(player)}", (30, 108), 18, config.ACCENT_COLOR)
+    draw_text(surface, f"彈藥 {player.ammo}/{player.ammo_capacity}｜補彈計時 {player.ammo_recovery_timer:.1f}s", (30, 132), 18, config.ACCENT_COLOR)
+    draw_text(surface, f"大招能量 {player.ultimate_energy:.0f}%", (30, 156), 18, config.ACCENT_COLOR)
     primary_status = "可射擊" if player.primary_cooldown <= 0 else f"普攻冷卻 {player.primary_cooldown:.1f}s"
     tactical_status = "可使用" if player.tactical_cooldown <= 0 else f"配件冷卻 {player.tactical_cooldown:.1f}s"
-    draw_text(surface, f"強化 {player.upgrade_stacks}/10｜{primary_status}", (30, 133), 19, config.WARNING_COLOR)
-    draw_text(surface, f"{tactical.display_name}｜{tactical_status}", (30, 158), 19, config.WARNING_COLOR)
+    draw_text(surface, f"強化 {player.upgrade_stacks}/10｜{primary_status}", (30, 180), 18, config.WARNING_COLOR)
+    draw_text(surface, f"{tactical.display_name}｜{tactical_status}", (30, 204), 18, config.WARNING_COLOR)
     if not player.alive:
-        draw_text(surface, f"死亡｜{player.death_timer:.1f}s 後重生", (30, 183), 18, config.DANGER_COLOR)
+        draw_text(surface, f"死亡｜{player.death_timer:.1f}s 後重生", (30, 228), 17, config.DANGER_COLOR)
     elif player.character_id == CharacterId.SNIPER:
-        draw_text(surface, f"普攻提示：按住左鍵蓄力 {player.primary_charge:.1f}/0.6s", (30, 183), 16, config.MUTED_TEXT_COLOR)
+        draw_text(surface, f"普攻提示：按住左鍵蓄力 {player.primary_charge:.1f}/0.6s，放開射擊", (30, 228), 16, config.MUTED_TEXT_COLOR)
     elif player.character_id == CharacterId.SIPHONER:
-        draw_text(surface, "普攻提示：按住左鍵維持吸能光束", (30, 183), 16, config.MUTED_TEXT_COLOR)
+        draw_text(surface, "普攻提示：按住左鍵維持吸能光束，放開停止", (30, 228), 16, config.MUTED_TEXT_COLOR)
     else:
-        draw_text(surface, "普攻提示：左鍵｜大招：右鍵", (30, 183), 16, config.MUTED_TEXT_COLOR)
+        draw_text(surface, "普攻提示：按住瞄準、放開施放｜大招：右鍵", (30, 228), 16, config.MUTED_TEXT_COLOR)
+    preview_slot = _preview_slot(input_state)
+    if preview_slot is not None:
+        preview_name = {"primary": "普攻", "ultimate": "大招", "tactical": "配件"}[preview_slot]
+        preview_state = "可施放" if _preview_is_valid(player, preview_slot) else "資源／冷卻不足"
+        preview_color = config.ACCENT_COLOR if preview_state == "可施放" else config.AIM_GUIDE_INVALID_COLOR
+        draw_text(surface, f"目前瞄準：{preview_name}｜{preview_state}", (30, 249), 16, preview_color)
     active_status = None
     active_status_color = config.TEXT_COLOR
     if player.invulnerability_timer > 0.0:
@@ -621,7 +746,7 @@ def draw_hud(surface: pygame.Surface, match: MatchState) -> None:
         active_status = f"目前狀態：減速 {player.slow_multiplier:.1f}x｜{player.slow_timer:.1f}s"
         active_status_color = config.WARNING_COLOR
     if active_status:
-        draw_text(surface, active_status, (30, 207), 15, active_status_color)
+        draw_text(surface, active_status, (30, 267), 15, active_status_color)
     remaining = max(0.0, match.duration - match.elapsed_time)
     draw_text(surface, f"剩餘 {remaining:05.1f}s", (config.WINDOW_WIDTH - 180, 20), 28, config.WARNING_COLOR)
     if match.elapsed_time >= match.extraction_start_time:
@@ -629,12 +754,12 @@ def draw_hud(surface: pygame.Surface, match: MatchState) -> None:
     draw_text(surface, "WASD 移動｜左鍵普攻｜右鍵大招｜Space 配件｜F1 測試", (16, config.WINDOW_HEIGHT - 30), 18, config.MUTED_TEXT_COLOR)
     _draw_player_roster(surface, match)
     if match.developer_mode.enabled:
-        draw_text(surface, f"開發者模式｜假玩家 {match.developer_mode.selected_dummy_id}｜1～5選取 M放入 N返回", (16, 232), 19, config.WARNING_COLOR)
+        draw_text(surface, f"開發者模式｜假玩家 {match.developer_mode.selected_dummy_id}｜1～5選取 M放入 N返回", (16, 300), 19, config.WARNING_COLOR)
 
 
-def draw_match(surface: pygame.Surface, match: MatchState) -> None:
-    draw_world(surface, match)
-    draw_hud(surface, match)
+def draw_match(surface: pygame.Surface, match: MatchState, input_state: InputState | None = None) -> None:
+    draw_world(surface, match, input_state)
+    draw_hud(surface, match, input_state)
 
 
 def draw_result(surface: pygame.Surface, match: MatchState) -> None:
