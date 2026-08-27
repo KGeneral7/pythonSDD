@@ -183,6 +183,9 @@ class AbilityEffect:
     impact_status: str = ""
     hit_target_ids: set[tuple[str, int]] = field(default_factory=set)
     metadata: dict[str, Any] = field(default_factory=dict)
+    # 固定的施放原點；position 只表示目前前端或範圍中心。
+    # 放在既有預設欄位之後，保留舊版 positional dataclass 建構相容性。
+    origin: Vector2 = field(default_factory=Vector2)
 
 
 @dataclass

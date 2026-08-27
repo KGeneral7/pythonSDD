@@ -127,19 +127,35 @@ def build_aim_guide(
 
     if slot == "primary":
         if player.character_id == CharacterId.BREACHER:
-            distance = character.primary_range
+            distance = config.BREACH_CONE_RANGE
+            half_angle = config.BREACH_CONE_ANGLE_DEGREES / 2.0
+            pellet_count = config.BREACH_PELLET_COUNT
+            divisor = max(1, pellet_count - 1)
             endpoints = tuple(
                 clamp_world_point(
                     clamp_aim_endpoint(
                         origin,
-                        _rotate(direction, angle),
+                        _rotate(
+                            direction,
+                            -half_angle + config.BREACH_CONE_ANGLE_DEGREES * index / divisor,
+                        ),
                         distance,
                         margin=config.BREACH_PELLET_RADIUS,
                     ),
                 )
-                for angle in (-30.0, -15.0, 0.0, 15.0, 30.0)
+                for index in range(pellet_count)
             )
-            return _guide(player, slot, "wedge", direction, endpoints[2], range_distance=distance, angle_degrees=60.0, path_points=endpoints, valid=valid)
+            return _guide(
+                player,
+                slot,
+                "wedge",
+                direction,
+                endpoints[pellet_count // 2],
+                range_distance=distance,
+                angle_degrees=config.BREACH_CONE_ANGLE_DEGREES,
+                path_points=endpoints,
+                valid=valid,
+            )
         if player.character_id == CharacterId.SNIPER:
             end = clamp_aim_endpoint(
                 origin,

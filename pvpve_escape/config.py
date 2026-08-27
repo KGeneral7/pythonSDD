@@ -35,6 +35,14 @@ MONSTER_ATTACK_INTERVAL = 0.8
 MONSTER_RESPAWN_DELAY = 6.0
 
 # 飛行物碰撞半徑與瞄準預覽色集中管理；速度由角色定義保存。
+BREACH_CONE_ANGLE_DEGREES = 60.0
+BREACH_CONE_RANGE = 200.0
+BREACH_PELLET_COUNT = 5
+BREACH_PROJECTILE_SPEED = 900.0
+SNIPER_PROJECTILE_SPEED = 1400.0
+HUNTER_PROJECTILE_SPEED = 520.0
+MINE_PROJECTILE_SPEED = 650.0
+GEOMETRY_EPSILON = 1e-6
 BREACH_PELLET_RADIUS = 6.0
 SNIPER_PROJECTILE_RADIUS = 8.0
 BOOMERANG_PROJECTILE_RADIUS = 12.0
@@ -43,6 +51,37 @@ AIM_GUIDE_COLOR = (112, 235, 201)
 AIM_GUIDE_SECONDARY_COLOR = (158, 217, 255)
 AIM_GUIDE_INVALID_COLOR = (129, 132, 142)
 AIM_GUIDE_OUTLINE_COLOR = (235, 240, 242)
+
+# 技能圖形使用固定色彩，讓不同角色即使在沒有素材時也能快速辨識。
+ABILITY_COLORS = {
+    "breach": (255, 174, 74),
+    "sniper": (158, 217, 255),
+    "guardian": (235, 240, 242),
+    "hunter": (173, 133, 255),
+    "controller": (255, 196, 92),
+    "siphoner": (119, 194, 255),
+    "tactical": (89, 213, 176),
+}
+
+GUI_OPACITY_PERCENT = 78
+GUI_OPACITY_MIN_PERCENT = 50
+GUI_OPACITY_MAX_PERCENT = 90
+
+
+def clamp_gui_opacity_percent(value: int | float = GUI_OPACITY_PERCENT) -> int:
+    """將 GUI 背景不透明度限制在 50～90%，保留半透明可讀性。"""
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        numeric_value = float(GUI_OPACITY_PERCENT)
+    return round(max(GUI_OPACITY_MIN_PERCENT, min(GUI_OPACITY_MAX_PERCENT, numeric_value)))
+
+
+def gui_panel_alpha(value: int | float = GUI_OPACITY_PERCENT) -> int:
+    """將百分比設定轉成 Pygame SRCALPHA 使用的 0～255 alpha。"""
+
+    return round(255 * clamp_gui_opacity_percent(value) / 100)
 
 EXTRACTION_CENTER = Vector2(WORLD_WIDTH / 2, WORLD_HEIGHT / 2)
 EXTRACTION_RADIUS = 140.0

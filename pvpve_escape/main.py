@@ -35,6 +35,7 @@ class GameApplication:
         self.match = None
         self.selected_character_index = 0
         self.selected_tactical_index = 0
+        self.human_controller.reset()
 
     def run(self) -> None:
         while self.running:

@@ -427,6 +427,90 @@ class TraditionalChineseFontTests(unittest.TestCase):
         self.assertTrue(mine.armed)
         rendering.draw_match(pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT)), mine_match)
 
+    def test_all_combat_effect_states_render_without_external_assets(self) -> None:
+        """六角色、三配件與命中狀態均可在無頭 surface 上繪製。"""
+
+        surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+        for role in CharacterId:
+            match = create_match(role)
+            owner = match.players[0]
+            for other in match.players[1:]:
+                other.alive = False
+            owner.primary_cooldown = 0.0
+            primary = create_primary_action(owner, Vector2(1, 0), 0.6)
+            self.assertIsNotNone(primary)
+            _apply_action(match, primary)
+            owner.ultimate_energy = 100.0
+            ultimate = create_ultimate_action(owner, Vector2(1, 0))
+            self.assertIsNotNone(ultimate)
+            _apply_action(match, ultimate)
+            for effect in match.effects:
+                effect.metadata.setdefault("impact_status", "命中")
+            rendering.draw_match(surface, match, InputState(aim_direction=Vector2(1, 0)))
+
+        for tactical in TacticalId:
+            match = create_match(selected_tactical=tactical)
+            owner = match.players[0]
+            action = create_tactical_action(owner, Vector2(1, 0), Vector2(1, 0))
+            self.assertIsNotNone(action)
+            _apply_action(match, action)
+            rendering.draw_match(surface, match, InputState(aim_direction=Vector2(1, 0)))
+
+    def test_gui_panels_use_local_alpha_without_fading_world_or_text(self) -> None:
+        background = (90, 100, 110)
+        for opacity in (50, 78, 90, 49, 91):
+            surface = pygame.Surface((240, 160))
+            surface.fill(background)
+            panel = pygame.Rect(20, 20, 120, 80)
+            rendering.draw_panel(surface, panel, opacity_percent=opacity)
+            inside = surface.get_at((70, 60))[:3]
+            outside = surface.get_at((5, 5))[:3]
+            self.assertEqual(outside, background)
+            self.assertNotEqual(inside, background)
+            self.assertNotEqual(inside, config.PANEL_COLOR)
+
+            rendering.draw_text(surface, "清晰", (34, 38), 20, config.TEXT_COLOR)
+            text_pixels = sum(
+                surface.get_at((x, y))[:3] == config.TEXT_COLOR
+                for x in range(20, 140)
+                for y in range(20, 100)
+            )
+            self.assertGreater(text_pixels, 0)
+
+    def test_selection_and_result_panels_render_at_all_supported_opacities(self) -> None:
+        surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+        match = create_match()
+        for opacity in (50, 78, 90, 49, 91):
+            with patch.object(config, "GUI_OPACITY_PERCENT", opacity):
+                rendering.draw_selection(surface, 0, 0)
+                rendering.draw_result(surface, match)
+
+    def test_repeated_ability_rendering_smoke_runs_twenty_times_per_slot(self) -> None:
+        surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+        for role in CharacterId:
+            for _ in range(20):
+                match = create_match(role)
+                owner = match.players[0]
+                for other in match.players[1:]:
+                    other.alive = False
+                owner.primary_cooldown = 0.0
+                primary = create_primary_action(owner, Vector2(1, 0), 0.6)
+                self.assertIsNotNone(primary)
+                _apply_action(match, primary)
+                owner.ultimate_energy = 100.0
+                ultimate = create_ultimate_action(owner, Vector2(1, 0))
+                self.assertIsNotNone(ultimate)
+                _apply_action(match, ultimate)
+                rendering.draw_match(surface, match, InputState(aim_direction=Vector2(1, 0)))
+
+        for tactical in TacticalId:
+            for _ in range(20):
+                match = create_match(selected_tactical=tactical)
+                action = create_tactical_action(match.players[0], Vector2(1, 0), Vector2(1, 0))
+                self.assertIsNotNone(action)
+                _apply_action(match, action)
+                rendering.draw_match(surface, match, InputState(aim_direction=Vector2(1, 0)))
+
 
 if __name__ == "__main__":
     unittest.main()

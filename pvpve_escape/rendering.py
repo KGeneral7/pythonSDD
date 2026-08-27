@@ -11,6 +11,7 @@ from .aiming import build_aim_guide
 from .characters import get_character_definition, get_tactical_definition
 from .controllers import InputState
 from .models import AimGuide, AbilityEffect, CharacterId, MatchPhase, MatchState, PlayerState, TacticalId, Vector2
+from .rules import primary_attack_active
 from .world import world_to_screen
 
 
@@ -88,6 +89,38 @@ def create_screen() -> pygame.Surface:
     return pygame.display.set_mode((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
 
 
+def draw_panel(
+    surface: pygame.Surface,
+    rect: pygame.Rect,
+    *,
+    fill_color: tuple[int, int, int] = config.PANEL_COLOR,
+    border_color: tuple[int, int, int] = config.PANEL_BORDER_COLOR,
+    border_width: int = 2,
+    radius: int = 8,
+    opacity_percent: int | float | None = None,
+) -> None:
+    """以局部 SRCALPHA surface 繪製半透明資訊面板。"""
+
+    safe_rect = rect.copy()
+    if safe_rect.width <= 0 or safe_rect.height <= 0:
+        return
+    alpha_value = config.gui_panel_alpha(
+        config.GUI_OPACITY_PERCENT if opacity_percent is None else opacity_percent
+    )
+    panel = pygame.Surface(safe_rect.size, pygame.SRCALPHA)
+    panel_rect = panel.get_rect()
+    pygame.draw.rect(panel, (*fill_color, alpha_value), panel_rect, border_radius=max(0, radius))
+    if border_width > 0:
+        pygame.draw.rect(
+            panel,
+            (*border_color, alpha_value),
+            panel_rect,
+            max(1, int(border_width)),
+            border_radius=max(0, radius),
+        )
+    surface.blit(panel, safe_rect.topleft)
+
+
 def draw_text(
     surface: pygame.Surface,
     text: str,
@@ -136,8 +169,13 @@ def draw_selection(
         row = index // 3
         rect = pygame.Rect(70 + column * 390, 135 + row * 155, card_width, card_height)
         selected = index == selected_character_index
-        pygame.draw.rect(surface, config.PANEL_COLOR, rect, border_radius=10)
-        pygame.draw.rect(surface, config.ACCENT_COLOR if selected else config.PANEL_BORDER_COLOR, rect, 3, border_radius=10)
+        draw_panel(
+            surface,
+            rect,
+            border_color=config.ACCENT_COLOR if selected else config.PANEL_BORDER_COLOR,
+            border_width=3,
+            radius=10,
+        )
         _draw_role_shape(
             surface,
             (rect.right - 34, rect.y + 34),
@@ -160,8 +198,13 @@ def draw_selection(
     for index, definition in enumerate(tactics):
         rect = pygame.Rect(70 + index * 390, 510, 280, 88)
         selected = index == selected_tactical_index
-        pygame.draw.rect(surface, config.PANEL_COLOR, rect, border_radius=8)
-        pygame.draw.rect(surface, config.WARNING_COLOR if selected else config.PANEL_BORDER_COLOR, rect, 3, border_radius=8)
+        draw_panel(
+            surface,
+            rect,
+            border_color=config.WARNING_COLOR if selected else config.PANEL_BORDER_COLOR,
+            border_width=3,
+            radius=8,
+        )
         draw_text(surface, f"{('Q', 'W', 'E')[index]}  {definition.display_name}", (rect.x + 14, rect.y + 12), 24, config.WARNING_COLOR if selected else config.TEXT_COLOR)
         draw_text(surface, f"冷卻 {definition.cooldown:.0f}s", (rect.x + 14, rect.y + 46), 18, config.MUTED_TEXT_COLOR)
     draw_text(surface, "假玩家固定不移動、不攻擊；可在比賽中使用 F1 開發者測試。", (70, 655), 20, config.MUTED_TEXT_COLOR)
@@ -272,7 +315,7 @@ def _draw_health_bar(
 ) -> None:
     ratio = max(0.0, min(1.0, health / max(max_health, 1.0)))
     bar = pygame.Rect(center[0] - width // 2, center[1] + y_offset, width, 6)
-    pygame.draw.rect(surface, config.PANEL_COLOR, bar)
+    draw_panel(surface, bar, border_width=0, radius=0)
     if ratio > 0:
         health_color = config.DANGER_COLOR if ratio <= 0.3 else config.WARNING_COLOR if ratio <= 0.6 else config.ACCENT_COLOR
         pygame.draw.rect(surface, health_color, (bar.x + 1, bar.y + 1, max(1, round((bar.width - 2) * ratio)), bar.height - 2))
@@ -288,8 +331,7 @@ def _draw_player_overlay(surface: pygame.Surface, player: PlayerState, point: tu
 
 def _draw_player_roster(surface: pygame.Surface, match: MatchState) -> None:
     panel = pygame.Rect(880, 500, 384, 174)
-    pygame.draw.rect(surface, config.PANEL_COLOR, panel, border_radius=8)
-    pygame.draw.rect(surface, config.PANEL_BORDER_COLOR, panel, 2, border_radius=8)
+    draw_panel(surface, panel, radius=8)
     draw_text(surface, "玩家／角色", (898, 510), 19, config.TEXT_COLOR)
     for index, player in enumerate(match.players):
         column = index % 2
@@ -328,6 +370,55 @@ def _draw_directional_wedge(
     pygame.draw.lines(surface, color, False, arc_points, 3)
 
 
+def _draw_translucent_polygon(
+    surface: pygame.Surface,
+    points: list[tuple[int, int]],
+    color: tuple[int, int, int],
+    alpha: int,
+) -> None:
+    """只在幾何圖形的包圍盒建立 alpha surface，避免污染世界前景。"""
+
+    if len(points) < 3:
+        return
+    min_x = max(0, min(point[0] for point in points))
+    min_y = max(0, min(point[1] for point in points))
+    max_x = min(surface.get_width() - 1, max(point[0] for point in points))
+    max_y = min(surface.get_height() - 1, max(point[1] for point in points))
+    if min_x > max_x or min_y > max_y:
+        return
+    overlay = pygame.Surface((max_x - min_x + 1, max_y - min_y + 1), pygame.SRCALPHA)
+    local_points = [(x - min_x, y - min_y) for x, y in points]
+    pygame.draw.polygon(overlay, (*color, max(0, min(255, int(alpha)))), local_points)
+    surface.blit(overlay, (min_x, min_y))
+
+
+def _draw_filled_directional_wedge(
+    surface: pygame.Surface,
+    center: tuple[int, int],
+    direction: Vector2,
+    radius: float,
+    angle_degrees: float,
+    color: tuple[int, int, int],
+    alpha: int = 76,
+) -> list[tuple[int, int]]:
+    """繪製方向一致的填色扇形，回傳外弧點供呼叫端補上邊框。"""
+
+    safe_radius = max(1, round(radius))
+    heading = math.atan2(direction.y, direction.x)
+    half_angle = math.radians(angle_degrees) / 2
+    arc_points = [
+        _polar_point(
+            center,
+            heading - half_angle + 2 * half_angle * index / 16,
+            safe_radius,
+        )
+        for index in range(17)
+    ]
+    _draw_translucent_polygon(surface, [center, *arc_points], color, alpha)
+    pygame.draw.lines(surface, color, False, [center, *arc_points], 2)
+    return arc_points
+
+
 def _aim_guide_color(guide: AimGuide) -> tuple[int, int, int]:
     if not guide.valid:
         return config.AIM_GUIDE_INVALID_COLOR
@@ -343,10 +434,20 @@ def _draw_aim_guide(surface: pygame.Surface, match: MatchState, guide: AimGuide)
     if guide.shape == "wedge":
         if guide.path_points:
             points = [_screen_point(match, point) for point in guide.path_points]
+            _draw_translucent_polygon(surface, [origin, *points], color, 58)
             for point in points:
                 pygame.draw.line(surface, color, origin, point, 3)
             pygame.draw.lines(surface, color, False, points, 2)
         else:
+            _draw_filled_directional_wedge(
+                surface,
+                origin,
+                guide.direction,
+                min(guide.range, guide.origin.distance_to(guide.end)),
+                guide.angle_degrees,
+                color,
+                58,
+            )
             _draw_directional_wedge(
                 surface,
                 origin,
@@ -403,35 +504,41 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
     label = _PRIMARY_EFFECT_LABELS.get(kind)
 
     if kind == "breach_cone":
-        _draw_directional_wedge(
+        cone_origin = _screen_point(match, effect.origin)
+        front_distance = min(effect.max_distance, max(0.0, effect.distance_travelled))
+        arc_points = _draw_filled_directional_wedge(
             surface,
-            point,
+            cone_origin,
             direction,
-            effect.max_distance,
+            front_distance,
             float(effect.metadata.get("angle", 60)),
-            config.WARNING_COLOR,
+            config.ABILITY_COLORS["breach"],
+            82,
         )
-        heading = math.atan2(direction.y, direction.x)
-        half_angle = math.radians(float(effect.metadata.get("angle", 60))) / 2
-        for fraction in (0.35, 0.65, 1.0):
-            pygame.draw.line(
-                surface,
-                config.WARNING_COLOR,
-                point,
-                _polar_point(point, heading - half_angle + 2 * half_angle * fraction, effect.max_distance),
-                2,
-            )
+        if arc_points:
+            pygame.draw.lines(surface, config.ABILITY_COLORS["breach"], False, arc_points, 3)
+        for result in effect.metadata.get("impact_results", {}).values():
+            if not isinstance(result, dict):
+                continue
+            impact_position = result.get("position")
+            if not isinstance(impact_position, Vector2):
+                continue
+            impact_point = _screen_point(match, impact_position)
+            impact_color = config.EXTRACTION_COLOR if result.get("effective_damage", 0) > 0 else config.DANGER_COLOR
+            pygame.draw.circle(surface, impact_color, impact_point, 20, 3)
+            pygame.draw.line(surface, impact_color, (impact_point[0] - 12, impact_point[1]), (impact_point[0] + 12, impact_point[1]), 2)
+            pygame.draw.line(surface, impact_color, (impact_point[0], impact_point[1] - 12), (impact_point[0], impact_point[1] + 12), 2)
     elif kind == "breach_pellet":
         tail = effect.metadata.get("visible_start")
         if not isinstance(tail, Vector2):
             tail = effect.position - direction * 26
         screen_tail = _screen_point(match, tail)
-        pygame.draw.line(surface, config.WARNING_COLOR, screen_tail, point, 4)
-        pygame.draw.circle(surface, config.WARNING_COLOR, point, 6)
+        pygame.draw.line(surface, config.ABILITY_COLORS["breach"], screen_tail, point, 4)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["breach"], point, 6)
         pygame.draw.circle(surface, config.TEXT_COLOR, point, 6, 1)
     elif kind == "sniper_line":
         impact_blocked = bool(effect.metadata.get("impact_blocked", 0))
-        impact_color = config.DANGER_COLOR if impact_blocked else config.EXTRACTION_COLOR
+        impact_color = config.DANGER_COLOR if impact_blocked else config.ABILITY_COLORS["sniper"]
         if effect.metadata.get("impacted"):
             impact = effect.impact_position or effect.position
             impact_point = _screen_point(match, impact)
@@ -443,12 +550,12 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
             if not isinstance(tail, Vector2):
                 tail = effect.position - direction * 42
             screen_tail = _screen_point(match, tail)
-            pygame.draw.line(surface, config.EXTRACTION_COLOR, screen_tail, point, 6)
-            pygame.draw.circle(surface, config.EXTRACTION_COLOR, point, 9)
+            pygame.draw.line(surface, config.ABILITY_COLORS["sniper"], screen_tail, point, 6)
+            pygame.draw.circle(surface, config.ABILITY_COLORS["sniper"], point, 9)
             pygame.draw.circle(surface, config.TEXT_COLOR, point, 9, 2)
     elif kind == "sniper_ultimate_line":
         end = effect.position + direction * effect.max_distance
-        line_color = config.EXTRACTION_COLOR
+        line_color = config.ABILITY_COLORS["sniper"]
         pygame.draw.line(surface, line_color, point, _screen_point(match, end), 8)
         pygame.draw.line(surface, config.TEXT_COLOR, point, _screen_point(match, end), 2)
         pygame.draw.circle(surface, line_color, point, 9, 2)
@@ -459,20 +566,20 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
             direction,
             effect.max_distance,
             float(effect.metadata.get("angle", 100)),
-            config.TEXT_COLOR,
+            config.ABILITY_COLORS["guardian"],
         )
     elif kind == "boomerang":
         tail = effect.metadata.get("visible_start")
         if not isinstance(tail, Vector2):
             tail = effect.position - direction * 48
-        pygame.draw.line(surface, config.ACCENT_COLOR, _screen_point(match, tail), point, 6)
+        pygame.draw.line(surface, config.ABILITY_COLORS["hunter"], _screen_point(match, tail), point, 6)
         blade = [
             _oriented_point(point, direction, 23, 0),
             _oriented_point(point, direction, 0, 11),
             _oriented_point(point, direction, -23, 0),
             _oriented_point(point, direction, 0, -11),
         ]
-        pygame.draw.polygon(surface, config.ACCENT_COLOR, blade)
+        pygame.draw.polygon(surface, config.ABILITY_COLORS["hunter"], blade)
         pygame.draw.polygon(surface, config.TEXT_COLOR, blade, 2)
         pygame.draw.circle(surface, config.TEXT_COLOR, point, 6, 2)
     elif kind == "mine":
@@ -482,24 +589,24 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
             if not isinstance(tail, Vector2) and owner is not None:
                 tail = owner.position
             if isinstance(tail, Vector2):
-                pygame.draw.line(surface, config.WARNING_COLOR, _screen_point(match, tail), point, 3)
-            pygame.draw.circle(surface, config.WARNING_COLOR, point, 9, 2)
+                pygame.draw.line(surface, config.ABILITY_COLORS["controller"], _screen_point(match, tail), point, 3)
+            pygame.draw.circle(surface, config.ABILITY_COLORS["controller"], point, 9, 2)
             pygame.draw.circle(surface, config.TEXT_COLOR, point, 4)
         else:
             radius = max(24, round(float(effect.metadata.get("area_radius", effect.radius))))
-            pygame.draw.circle(surface, config.WARNING_COLOR, point, radius, 3)
-            pygame.draw.circle(surface, config.WARNING_COLOR, point, max(7, radius // 5), 2)
-            pygame.draw.line(surface, config.WARNING_COLOR, (point[0] - 10, point[1] - 10), (point[0] + 10, point[1] + 10), 2)
-            pygame.draw.line(surface, config.WARNING_COLOR, (point[0] + 10, point[1] - 10), (point[0] - 10, point[1] + 10), 2)
+            pygame.draw.circle(surface, config.ABILITY_COLORS["controller"], point, radius, 3)
+            pygame.draw.circle(surface, config.ABILITY_COLORS["controller"], point, max(7, radius // 5), 2)
+            pygame.draw.line(surface, config.ABILITY_COLORS["controller"], (point[0] - 10, point[1] - 10), (point[0] + 10, point[1] + 10), 2)
+            pygame.draw.line(surface, config.ABILITY_COLORS["controller"], (point[0] + 10, point[1] - 10), (point[0] - 10, point[1] + 10), 2)
     elif kind == "beam":
         end = effect.position + direction * effect.max_distance
         screen_end = _screen_point(match, end)
-        pygame.draw.line(surface, config.ACCENT_COLOR, point, screen_end, 10)
+        pygame.draw.line(surface, config.ABILITY_COLORS["siphoner"], point, screen_end, 10)
         pygame.draw.line(surface, config.TEXT_COLOR, point, screen_end, 3)
         pygame.draw.circle(surface, config.ACCENT_COLOR, point, 12, 2)
     elif kind in {"breach_burst", "siphon_burst"}:
         radius = max(30, round(effect.radius))
-        color = config.WARNING_COLOR if kind == "breach_burst" else config.EXTRACTION_COLOR
+        color = config.ABILITY_COLORS["breach"] if kind == "breach_burst" else config.ABILITY_COLORS["siphoner"]
         pygame.draw.circle(surface, color, point, radius, 5)
         pygame.draw.circle(surface, color, point, max(18, radius // 2), 2)
         for index in range(8):
@@ -512,23 +619,23 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
             )
     elif kind == "guardian_guard":
         pygame.draw.circle(surface, config.TEXT_COLOR, point, 38, 4)
-        pygame.draw.circle(surface, config.ACCENT_COLOR, point, 29, 2)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["guardian"], point, 29, 2)
     elif kind == "hunter_dash":
         end = effect.position + direction * effect.max_distance
         screen_end = _screen_point(match, end)
-        pygame.draw.line(surface, config.ACCENT_COLOR, point, screen_end, 10)
+        pygame.draw.line(surface, config.ABILITY_COLORS["hunter"], point, screen_end, 10)
         pygame.draw.line(surface, config.TEXT_COLOR, point, screen_end, 3)
-        pygame.draw.circle(surface, config.ACCENT_COLOR, point, 20, 3)
-        pygame.draw.circle(surface, config.ACCENT_COLOR, screen_end, 20, 3)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["hunter"], point, 20, 3)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["hunter"], screen_end, 20, 3)
     elif kind == "gravity_cage":
         radius = max(30, round(effect.radius))
-        pygame.draw.circle(surface, config.WARNING_COLOR, point, radius, 5)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["controller"], point, radius, 5)
         pygame.draw.circle(surface, config.EXTRACTION_COLOR, point, max(18, radius - 24), 2)
         for index in range(4):
             angle = index * math.pi / 2 + math.pi / 4
             pygame.draw.line(
                 surface,
-                config.WARNING_COLOR,
+                config.ABILITY_COLORS["controller"],
                 _polar_point(point, angle, radius - 14),
                 _polar_point(point, angle + math.pi, radius - 14),
                 2,
@@ -536,11 +643,11 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
     elif kind == "dash":
         end = effect.position + direction * effect.max_distance
         screen_end = _screen_point(match, end)
-        pygame.draw.line(surface, config.ACCENT_COLOR, point, screen_end, 8)
-        pygame.draw.circle(surface, config.ACCENT_COLOR, point, 24, 3)
+        pygame.draw.line(surface, config.ABILITY_COLORS["tactical"], point, screen_end, 8)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["tactical"], point, 24, 3)
         pygame.draw.circle(surface, config.TEXT_COLOR, screen_end, 12, 2)
     elif kind == "shield":
-        pygame.draw.circle(surface, config.EXTRACTION_COLOR, point, 36, 5)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["tactical"], point, 36, 5)
         pygame.draw.circle(surface, config.TEXT_COLOR, point, 28, 2)
     elif kind == "control_zone":
         radius = max(24, round(effect.radius))
@@ -700,8 +807,7 @@ def draw_hud(surface: pygame.Surface, match: MatchState, input_state: InputState
         return
     player = match.players[0]
     panel = pygame.Rect(16, 16, 470, 276)
-    pygame.draw.rect(surface, config.PANEL_COLOR, panel, border_radius=8)
-    pygame.draw.rect(surface, config.PANEL_BORDER_COLOR, panel, 2, border_radius=8)
+    draw_panel(surface, panel, radius=8)
     from .characters import get_character_definition, get_tactical_definition
 
     character = get_character_definition(player.character_id)
@@ -711,7 +817,16 @@ def draw_hud(surface: pygame.Surface, match: MatchState, input_state: InputState
     pellet_text = "×5" if player.character_id == CharacterId.BREACHER else "/0.15s" if player.character_id == CharacterId.SIPHONER else ""
     draw_text(surface, f"普攻火力 {character.primary_damage:.0f}{pellet_text}｜射程 {character.primary_range:.0f}", (30, 84), 18, config.ACCENT_COLOR)
     draw_text(surface, f"飛行速度 {_speed_label(player)}", (30, 108), 18, config.ACCENT_COLOR)
-    draw_text(surface, f"彈藥 {player.ammo}/{player.ammo_capacity}｜補彈計時 {player.ammo_recovery_timer:.1f}s", (30, 132), 18, config.ACCENT_COLOR)
+    character_recovery_interval = max(0.001, character.ammo_recovery_interval)
+    primary_held = bool(input_state is not None and input_state.primary_held)
+    if primary_attack_active(player, primary_held):
+        ammo_status = "恢復暫停（普攻中）"
+    elif player.ammo >= player.ammo_capacity:
+        ammo_status = "彈匣已滿"
+    else:
+        next_round = max(0.0, character_recovery_interval - player.ammo_recovery_timer)
+        ammo_status = f"下一發 {next_round:.1f}s"
+    draw_text(surface, f"彈藥 {player.ammo}/{player.ammo_capacity}｜{ammo_status}", (30, 132), 17, config.ACCENT_COLOR)
     draw_text(surface, f"大招能量 {player.ultimate_energy:.0f}%", (30, 156), 18, config.ACCENT_COLOR)
     primary_status = "可射擊" if player.primary_cooldown <= 0 else f"普攻冷卻 {player.primary_cooldown:.1f}s"
     tactical_status = "可使用" if player.tactical_cooldown <= 0 else f"配件冷卻 {player.tactical_cooldown:.1f}s"
@@ -767,6 +882,8 @@ def draw_match(surface: pygame.Surface, match: MatchState, input_state: InputSta
 
 def draw_result(surface: pygame.Surface, match: MatchState) -> None:
     surface.fill(config.BACKGROUND_COLOR)
+    panel = pygame.Rect(config.WINDOW_WIDTH // 2 - 310, 190, 620, 220)
+    draw_panel(surface, panel, radius=12)
     if match.phase == MatchPhase.VICTORY:
         title = f"玩家 {match.winner_id} 獲勝！"
         color = config.ACCENT_COLOR

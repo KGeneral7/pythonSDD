@@ -2,6 +2,7 @@
 
 import unittest
 
+from pvpve_escape import config
 from pvpve_escape.aiming import build_aim_guide, clamp_aim_endpoint
 from pvpve_escape.models import CharacterId, TacticalId, Vector2
 from pvpve_escape.world import create_match
@@ -41,6 +42,16 @@ class AimGuideGeometryTests(unittest.TestCase):
             len(build_aim_guide(create_match(CharacterId.HUNTER).players[0], "primary", Vector2(1, 0)).path_points),
             3,
         )
+
+    def test_breacher_preview_uses_the_authoritative_cone_constants(self) -> None:
+        player = create_match(CharacterId.BREACHER).players[0]
+        guide = build_aim_guide(player, "primary", Vector2(1, 0))
+
+        self.assertEqual(guide.range, config.BREACH_CONE_RANGE)
+        self.assertEqual(guide.angle_degrees, config.BREACH_CONE_ANGLE_DEGREES)
+        self.assertEqual(len(guide.path_points), config.BREACH_PELLET_COUNT)
+        self.assertEqual(guide.origin.tuple(), player.position.tuple())
+        self.assertTrue(all(point.x <= config.WORLD_WIDTH and point.y <= config.WORLD_HEIGHT for point in guide.path_points))
 
     def test_ultimate_and_tactical_guides_share_the_same_boundary_rule(self) -> None:
         match = create_match(CharacterId.CONTROLLER, TacticalId.CONTROL)

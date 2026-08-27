@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from . import config
 from .models import (
+    AbilityEffect,
     CircleZone,
     DamageEvent,
     MatchPhase,
@@ -13,6 +14,12 @@ from .models import (
     PlayerStatus,
     Vector2,
 )
+
+
+def is_visual_only_effect(effect: AbilityEffect) -> bool:
+    """判斷效果是否只供畫面使用，不得進入規則命中流程。"""
+
+    return bool(effect.metadata.get("visual_only", False))
 
 
 def calculate_upgrade_multiplier(stacks: int) -> float:
@@ -58,10 +65,27 @@ def add_ultimate_energy(player: PlayerState, effective_damage: float, multiplier
     return player.ultimate_energy
 
 
-def recover_ammo(player: PlayerState, delta_time: float, recovery_interval: float) -> int:
-    """在彈藥未滿時依角色間隔逐發補回，不要求先打空彈匣。"""
+def primary_attack_active(player: PlayerState, primary_held: bool = False) -> bool:
+    """判斷目前是否仍處於普攻按住、蓄力、引導或後搖狀態。"""
 
-    if not player.alive or player.ammo >= player.ammo_capacity:
+    if not player.alive:
+        return False
+    return bool(
+        primary_held
+        or player.primary_charge > 0.0
+        or player.primary_cooldown > 0.0
+    )
+
+
+def recover_ammo(
+    player: PlayerState,
+    delta_time: float,
+    recovery_interval: float,
+    blocked: bool = False,
+) -> int:
+    """在未被普攻狀態阻擋時依角色間隔逐發補回彈藥。"""
+
+    if blocked or not player.alive or player.ammo >= player.ammo_capacity:
         player.ammo_recovery_timer = 0.0
         return player.ammo
 
@@ -164,6 +188,8 @@ def handle_player_death(player: PlayerState) -> None:
     player.extraction_progress = 0.0
     player.death_timer = config.RESPAWN_DELAY
     player.tactical_cooldown = 0.0
+    player.primary_cooldown = 0.0
+    player.ability_input_blocked = True
     player.ammo = 0
     player.ammo_recovery_timer = 0.0
     player.max_health = player.base_max_health * player.health_passive_multiplier
@@ -186,6 +212,9 @@ def respawn_player(player: PlayerState, spawn_position: Vector2) -> None:
     player.primary_cooldown = 0.0
     player.tactical_cooldown = 0.0
     player.extraction_progress = 0.0
+    # 重生後仍需等到上一個按鍵真正放開，避免死亡期間持續按住的
+    # 普攻／大招／配件在重生同幀自動重播。
+    player.ability_input_blocked = True
     clear_player_effects(player)
 
 

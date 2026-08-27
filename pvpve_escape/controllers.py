@@ -42,6 +42,14 @@ class HumanController:
         self._held = {"primary": False, "ultimate": False, "tactical": False}
         self._blocked_until_release = {"primary": False, "ultimate": False, "tactical": False}
 
+    def reset(self) -> None:
+        """清除重新開始前一局留下的按住／封鎖輸入狀態。"""
+
+        self._focused = True
+        for name in self._held:
+            self._held[name] = False
+            self._blocked_until_release[name] = False
+
     def collect(
         self,
         events: list[pygame.event.Event],
