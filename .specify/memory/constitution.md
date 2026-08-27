@@ -1,19 +1,18 @@
 <!--
-Sync Impact Report
-- Version change: unratified template -> 1.0.0
-- Modified principles: five placeholder principles replaced with learning-oriented rules
-- Added sections: Learning and Technical Constraints; Development Workflow
-- Removed sections: placeholder-only scaffold guidance
-- Deferred TODOs: none; 2026-08-26 is the initial adoption date
-- Capability basis: day1/day2 demonstrate functions, classes, Pygame event loops,
-  movement bounds, collision handling, game states, timers, random behavior,
-  power-ups, and multiple balls. The project does not yet use automated tests
-  or separated modules, so the rules introduce those practices gradually.
+Sync Impact Report（同步影響報告）
+- 版本變更：1.1.2 -> 1.2.0
+- 修改原則：無既有原則改名；新增 VII. Spec Kit 分支與 PR 生命週期
+- 修改章節：開發流程、治理
+- 新增章節：核心原則 VII. Spec Kit 分支與 PR 生命週期
+- 移除章節：無
+- 待處理 TODO：無
+- 能力依據：Spec Kit 的功能流程與 create-new-feature.ps1 會產生三位數功能序號及小寫
+  kebab-case 分支名稱；本專案以 specs/ 功能目錄保存對應的規格文件。
 -->
 
-# pythonSDD Constitution
+# pythonSDD 專案憲章
 
-## Core Principles
+## 核心原則
 
 ### I. 小步驟、可執行的學習
 每次功能變更 MUST 聚焦在一個可以觀察的行為，並在完成該小步驟後執行程式確認結果。
@@ -49,7 +48,27 @@ AI 產生或修改的程式碼 MUST 能用簡單語言說明其目的、輸入�
 標準是程式能啟動、主要情境符合預期，且沒有因新功能破壞既有操作。理由：目前以 Pygame
 畫面為主，先建立低門檻的重複驗證，再逐步增加自動化測試。
 
-## Learning and Technical Constraints
+### VI. SDD 文件語言一致性
+所有由 SDD 流程產生或維護的文件 MUST 以繁體中文撰寫，包括 `constitution.md`、
+`spec.md`、`plan.md`、`tasks.md`、`checklist.md`，以及同一功能下的研究、資料模型與
+契約等輔助文件。文件標題、需求、決策、驗收情境、任務與說明等敘述文字 MUST 使用
+繁體中文，不得以英文敘述取代繁體中文。SDD 指令名稱（例如 `$speckit-specify`、
+`$speckit-plan`）MAY 保留英文原名；專有名詞 MAY 直接使用原文。若文件必須引用程式碼
+識別字、檔案路徑、套件名稱、API／協定名稱或其他技術字串，MUST 保留其正確原始拼寫；
+除上述原文項目外，其他敘述文字 MUST 使用繁體中文。理由：統一 SDD 文件的敘述語言，
+使規格、計畫與任務能被一致閱讀、審查與追蹤，同時保留專有名詞、指令與技術識別字的
+正確性。
+
+### VII. 依 Spec Kit 管理分支與 PR 生命週期
+所有非小型功能及會影響既有行為的變更 MUST 使用 Spec Kit 功能流程建立 Git 分支，且
+分支名稱 MUST 採用 Spec Kit 產生的標準格式。預設格式為 `###-feature-name`：`###` 為
+三位數功能序號，`feature-name` MUST 是由小寫英數字與單一連字號組成的簡短名稱。功能
+分支名稱、`specs/` 下的功能目錄名稱，以及 `plan.md` 的分支欄位 MUST 使用同一個功能
+識別字；若明確使用 Spec Kit 提供的 timestamp 模式，MAY 使用工具產生的 timestamp 格式，
+不得自行混用其他命名規則。理由：統一分支與規格的識別字，能讓功能、文件、程式變更與
+審查紀錄彼此追蹤，並降低誤用分支或遺漏規格的風險。
+
+## 學習與技術限制
 
 - 專案以 Python 3.11 或更新版本為基準；目前的互動練習以 Pygame 為主要框架。
 - 新增套件 MUST 安裝在專案的虛擬環境，不得依賴全域安裝；並在規格、計畫或專案筆記中
@@ -61,7 +80,7 @@ AI 產生或修改的程式碼 MUST 能用簡單語言說明其目的、輸入�
 - 新功能 MUST 保留既有功能，除非規格明確要求改變；修正錯誤時要指出受影響的行為，
   不把無關的全面重構混入同一次變更。
 
-## Development Workflow
+## 開發流程
 
 1. 先用一段話描述使用者看得到的目標與完成條件；小型修正可以直接開始，非小型功能
    MUST 使用 `$speckit-specify` 建立規格。
@@ -72,8 +91,11 @@ AI 產生或修改的程式碼 MUST 能用簡單語言說明其目的、輸入�
    實際結果，再修改最相關的邏輯。
 5. 對新增的陌生概念進行簡短回顧：能說明它解決的問題、輸入輸出與限制後，才視為已
    完成學習；需要時使用 `$speckit-converge` 檢查規格、計畫、任務與程式是否一致。
+6. 功能完成且驗證通過後，MUST 將功能分支推送至遠端並建立 PR；PR 說明 MUST 指向對應
+   的 `specs/<feature-id>/` 文件並記錄驗證結果。只有在遠端確認 PR 已合併後，才可以刪除
+   遠端與本地的功能分支；PR 未合併或僅被關閉時 MUST 保留分支。
 
-## Governance
+## 治理
 
 本憲章是本專案在學習、設計、實作與驗證時的最高指導文件。若為了學習實驗或特殊限制
 需要暫時違反規則，MUST 在規格、計畫或筆記中寫明原因、影響與日後是否要補回；例外不
@@ -86,6 +108,8 @@ AI 產生或修改的程式碼 MUST 能用簡單語言說明其目的、輸入�
 
 每個非小型功能的規格與計畫 MUST 指出適用的核心原則；完成實作前 MUST 依照第五項原則
 執行驗證。憲章的遵循檢查以可執行、可理解與已驗證為準，不以大型專案的工具數量或架構
-複雜度作為品質標準。
+複雜度作為品質標準。每次 PR 審查 MUST 檢查分支名稱是否符合第 VII 項原則、功能分支與
+`specs/` 目錄是否使用同一識別字，以及合併後是否已清除遠端與本地分支；若因權限或工具
+限制無法清除，MUST 記錄原因與預定處理方式。
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-08-26
+**Version**: 1.2.0 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-08-27

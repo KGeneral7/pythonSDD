@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import pygame
 
-from .models import MatchPhase, Vector2
+from .models import AppScreen, MatchPhase, Vector2
 
 
 @dataclass
@@ -26,6 +26,10 @@ class InputState:
     quit_requested: bool = False
     restart_requested: bool = False
     start_requested: bool = False
+    intro_continue_requested: bool = False
+    intro_back_requested: bool = False
+    intro_requested: bool = False
+    auto_aim_toggle_pressed: bool = False
     selected_character_index: int | None = None
     selected_tactical_index: int | None = None
     developer_toggle: bool = False
@@ -42,16 +46,27 @@ class HumanController:
         self._held = {"primary": False, "ultimate": False, "tactical": False}
         self._blocked_until_release = {"primary": False, "ultimate": False, "tactical": False}
 
+    def reset(self) -> None:
+        """清除重新開始前一局留下的按住／封鎖輸入狀態。"""
+
+        self._focused = True
+        for name in self._held:
+            self._held[name] = False
+            self._blocked_until_release[name] = False
+
     def collect(
         self,
         events: list[pygame.event.Event],
         camera_position: Vector2,
         player_position: Vector2 | None,
-        phase: MatchPhase,
+        phase: AppScreen | MatchPhase,
     ) -> InputState:
         state = InputState()
         button_down = {"primary": False, "ultimate": False, "tactical": False}
         button_up = {"primary": False, "ultimate": False, "tactical": False}
+        is_playing = phase in (AppScreen.PLAYING, MatchPhase.PLAYING)
+        is_selection = phase in (AppScreen.CHARACTER_SELECT, MatchPhase.CHARACTER_SELECT)
+        is_intro = phase == AppScreen.INTRO
         for event in events:
             if event.type == pygame.QUIT:
                 state.quit_requested = True
@@ -65,7 +80,7 @@ class HumanController:
             if event.type == pygame.WINDOWFOCUSGAINED:
                 self._focused = True
                 continue
-            if event.type == pygame.MOUSEBUTTONDOWN and phase == MatchPhase.PLAYING and self._focused:
+            if event.type == pygame.MOUSEBUTTONDOWN and is_playing and self._focused:
                 if event.button == 1:
                     button_down["primary"] = True
                 elif event.button == 3:
@@ -77,7 +92,7 @@ class HumanController:
                 elif event.button == 3:
                     button_up["ultimate"] = True
                 continue
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE and phase == MatchPhase.PLAYING and self._focused:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE and is_playing and self._focused:
                 button_down["tactical"] = True
                 continue
             if event.type == pygame.KEYUP and event.key == pygame.K_SPACE:
@@ -86,18 +101,27 @@ class HumanController:
             if event.type != pygame.KEYDOWN:
                 continue
             if event.key == pygame.K_ESCAPE:
-                state.quit_requested = True
+                if is_intro:
+                    state.intro_back_requested = True
+                else:
+                    state.quit_requested = True
             elif event.key == pygame.K_r:
                 state.restart_requested = True
-            elif event.key == pygame.K_RETURN and phase == MatchPhase.CHARACTER_SELECT:
+            elif event.key in (pygame.K_RETURN, pygame.K_SPACE) and is_intro:
+                state.intro_continue_requested = True
+            elif event.key == pygame.K_RETURN and is_selection:
                 state.start_requested = True
-            elif event.key == pygame.K_F1 and phase == MatchPhase.PLAYING:
+            elif event.key == pygame.K_i and is_selection:
+                state.intro_requested = True
+            elif event.key == pygame.K_TAB and is_playing:
+                state.auto_aim_toggle_pressed = True
+            elif event.key == pygame.K_F1 and is_playing:
                 state.developer_toggle = True
-            elif event.key == pygame.K_m and phase == MatchPhase.PLAYING:
+            elif event.key == pygame.K_m and is_playing:
                 state.developer_place = True
-            elif event.key == pygame.K_n and phase == MatchPhase.PLAYING:
+            elif event.key == pygame.K_n and is_playing:
                 state.developer_return = True
-            elif phase == MatchPhase.CHARACTER_SELECT:
+            elif is_selection:
                 if pygame.K_1 <= event.key <= pygame.K_6:
                     state.selected_character_index = event.key - pygame.K_1
                 elif event.key in (pygame.K_q, pygame.K_w, pygame.K_e):
@@ -106,10 +130,10 @@ class HumanController:
                         pygame.K_w: 1,
                         pygame.K_e: 2,
                     }[event.key]
-            elif phase == MatchPhase.PLAYING and pygame.K_1 <= event.key <= pygame.K_5:
+            elif is_playing and pygame.K_1 <= event.key <= pygame.K_5:
                 state.developer_dummy_id = event.key - pygame.K_1 + 1
 
-        if phase != MatchPhase.PLAYING:
+        if not is_playing:
             for name in self._held:
                 self._held[name] = False
                 # 選角／結算期間不應把仍按住的技能鍵帶進下一個生命週期；

@@ -8,9 +8,13 @@ import pygame
 
 from . import config
 from .aiming import build_aim_guide
+from .auto_aim import AutoAimResult, resolve_auto_aim
 from .characters import get_character_definition, get_tactical_definition
 from .controllers import InputState
-from .models import AimGuide, AbilityEffect, CharacterId, MatchPhase, MatchState, PlayerState, TacticalId, Vector2
+from .models import AimGuide, AbilityEffect, CharacterId, MatchPhase, MatchState, MonsterType, PlayerState, TacticalId, Vector2
+from .monsters import get_monster_definition
+from .rules import primary_attack_active
+from .terrain import is_player_visible_to_viewer
 from .world import world_to_screen
 
 
@@ -88,6 +92,38 @@ def create_screen() -> pygame.Surface:
     return pygame.display.set_mode((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
 
 
+def draw_panel(
+    surface: pygame.Surface,
+    rect: pygame.Rect,
+    *,
+    fill_color: tuple[int, int, int] = config.PANEL_COLOR,
+    border_color: tuple[int, int, int] = config.PANEL_BORDER_COLOR,
+    border_width: int = 2,
+    radius: int = 8,
+    opacity_percent: int | float | None = None,
+) -> None:
+    """以局部 SRCALPHA surface 繪製半透明資訊面板。"""
+
+    safe_rect = rect.copy()
+    if safe_rect.width <= 0 or safe_rect.height <= 0:
+        return
+    alpha_value = config.gui_panel_alpha(
+        config.GUI_OPACITY_PERCENT if opacity_percent is None else opacity_percent
+    )
+    panel = pygame.Surface(safe_rect.size, pygame.SRCALPHA)
+    panel_rect = panel.get_rect()
+    pygame.draw.rect(panel, (*fill_color, alpha_value), panel_rect, border_radius=max(0, radius))
+    if border_width > 0:
+        pygame.draw.rect(
+            panel,
+            (*border_color, alpha_value),
+            panel_rect,
+            max(1, int(border_width)),
+            border_radius=max(0, radius),
+        )
+    surface.blit(panel, safe_rect.topleft)
+
+
 def draw_text(
     surface: pygame.Surface,
     text: str,
@@ -128,7 +164,7 @@ def draw_selection(
     from .characters import get_all_character_definitions, get_all_tactical_definitions
 
     draw_text(surface, "PvPvE 中央撤離競技", (config.WINDOW_WIDTH // 2, 48), 42, config.ACCENT_COLOR, True)
-    draw_text(surface, "按 1～6 選擇角色，Q/W/E 選擇配件，Enter 開始", (config.WINDOW_WIDTH // 2, 88), 24, config.MUTED_TEXT_COLOR, True)
+    draw_text(surface, "按 1～6 選擇角色，Q/W/E 選擇配件，Enter 開始，I 查看玩法", (config.WINDOW_WIDTH // 2, 88), 24, config.MUTED_TEXT_COLOR, True)
     definitions = get_all_character_definitions()
     card_width, card_height = 280, 126
     for index, definition in enumerate(definitions):
@@ -136,8 +172,13 @@ def draw_selection(
         row = index // 3
         rect = pygame.Rect(70 + column * 390, 135 + row * 155, card_width, card_height)
         selected = index == selected_character_index
-        pygame.draw.rect(surface, config.PANEL_COLOR, rect, border_radius=10)
-        pygame.draw.rect(surface, config.ACCENT_COLOR if selected else config.PANEL_BORDER_COLOR, rect, 3, border_radius=10)
+        draw_panel(
+            surface,
+            rect,
+            border_color=config.ACCENT_COLOR if selected else config.PANEL_BORDER_COLOR,
+            border_width=3,
+            radius=10,
+        )
         _draw_role_shape(
             surface,
             (rect.right - 34, rect.y + 34),
@@ -160,11 +201,77 @@ def draw_selection(
     for index, definition in enumerate(tactics):
         rect = pygame.Rect(70 + index * 390, 510, 280, 88)
         selected = index == selected_tactical_index
-        pygame.draw.rect(surface, config.PANEL_COLOR, rect, border_radius=8)
-        pygame.draw.rect(surface, config.WARNING_COLOR if selected else config.PANEL_BORDER_COLOR, rect, 3, border_radius=8)
+        draw_panel(
+            surface,
+            rect,
+            border_color=config.WARNING_COLOR if selected else config.PANEL_BORDER_COLOR,
+            border_width=3,
+            radius=8,
+        )
         draw_text(surface, f"{('Q', 'W', 'E')[index]}  {definition.display_name}", (rect.x + 14, rect.y + 12), 24, config.WARNING_COLOR if selected else config.TEXT_COLOR)
         draw_text(surface, f"冷卻 {definition.cooldown:.0f}s", (rect.x + 14, rect.y + 46), 18, config.MUTED_TEXT_COLOR)
     draw_text(surface, "假玩家固定不移動、不攻擊；可在比賽中使用 F1 開發者測試。", (70, 655), 20, config.MUTED_TEXT_COLOR)
+
+
+def draw_intro(surface: pygame.Surface) -> None:
+    """繪製開場玩法介紹，讓第一次進入遊戲即可知道目標與操作。"""
+
+    surface.fill(config.BACKGROUND_COLOR)
+    draw_text(surface, "PvPvE 中央撤離競技", (config.WINDOW_WIDTH // 2, 48), 44, config.ACCENT_COLOR, True)
+    draw_text(surface, "玩法導覽｜活下來、收集強化，並在最後撤離", (config.WINDOW_WIDTH // 2, 91), 25, config.TEXT_COLOR, True)
+
+    panels = (
+        (pygame.Rect(54, 135, 370, 430), "一局怎麼玩", config.ACCENT_COLOR),
+        (pygame.Rect(455, 135, 370, 430), "戰鬥與操作", config.WARNING_COLOR),
+        (pygame.Rect(856, 135, 370, 430), "敵人與瞄準", config.EXTRACTION_COLOR),
+    )
+    for rect, title, color in panels:
+        draw_panel(surface, rect, border_color=color, border_width=2, radius=12)
+        draw_text(surface, title, (rect.x + 24, rect.y + 22), 29, color)
+
+    left_lines = (
+        "1. 在地圖外圍出生，和其他玩家競爭。",
+        "2. 擊敗怪物取得強化層數與大招能量。",
+        "3. 210 秒後中央撤離區開啟。",
+        "4. 在撤離區累積 10 秒即可獲勝。",
+        "",
+        "死亡會在 5 秒後回到自己的出生點，",
+        "但本次生命的強化與大招能量會重置。",
+        "薄牆可以破壞，草叢可作為走位掩護。",
+    )
+    for index, line in enumerate(left_lines):
+        draw_text(surface, line, (78, 206 + index * 39), 18, config.TEXT_COLOR if line else config.MUTED_TEXT_COLOR)
+
+    middle_lines = (
+        "WASD      移動",
+        "滑鼠左鍵  普攻／蓄力",
+        "滑鼠右鍵  大招",
+        "Space     戰術配件",
+        "Tab       切換自動瞄準",
+        "R         回到選角頁",
+        "",
+        "自動瞄準預設開啟，只會取",
+        f"{config.AUTO_AIM_LOOKBACK_SECONDS:.2f} 秒前的位置。",
+        "子彈離手後不追蹤，請靠走位閃避。",
+    )
+    for index, line in enumerate(middle_lines):
+        draw_text(surface, line, (479, 206 + index * 32), 18, config.TEXT_COLOR if line else config.MUTED_TEXT_COLOR)
+
+    right_lines = (
+        "追獵獸  追近玩家並接觸攻擊",
+        "砲台蟲  保持距離發射慢速子彈",
+        "重裝巨獸  血厚、速度慢、近戰痛",
+        "",
+        "自動瞄準只鎖定目前扇形內最近目標，",
+        "標記顯示的是回看位置，不是必中點。",
+        "你改變方向或離開瞄準角度，",
+        "就能讓攻擊落空。",
+    )
+    for index, line in enumerate(right_lines):
+        draw_text(surface, line, (880, 206 + index * 39), 18, config.TEXT_COLOR if line else config.MUTED_TEXT_COLOR)
+
+    draw_text(surface, "Enter／Space 開始選擇角色    Esc 返回選角", (config.WINDOW_WIDTH // 2, 623), 24, config.ACCENT_COLOR, True)
+    draw_text(surface, "第一次遊玩建議先看完導覽；選角頁可按 I 再次查看。", (config.WINDOW_WIDTH // 2, 663), 18, config.MUTED_TEXT_COLOR, True)
 
 
 def _screen_point(match: MatchState, position: Vector2) -> tuple[int, int]:
@@ -272,7 +379,7 @@ def _draw_health_bar(
 ) -> None:
     ratio = max(0.0, min(1.0, health / max(max_health, 1.0)))
     bar = pygame.Rect(center[0] - width // 2, center[1] + y_offset, width, 6)
-    pygame.draw.rect(surface, config.PANEL_COLOR, bar)
+    draw_panel(surface, bar, border_width=0, radius=0)
     if ratio > 0:
         health_color = config.DANGER_COLOR if ratio <= 0.3 else config.WARNING_COLOR if ratio <= 0.6 else config.ACCENT_COLOR
         pygame.draw.rect(surface, health_color, (bar.x + 1, bar.y + 1, max(1, round((bar.width - 2) * ratio)), bar.height - 2))
@@ -286,12 +393,16 @@ def _draw_player_overlay(surface: pygame.Surface, player: PlayerState, point: tu
     draw_text(surface, f"{player.player_id} {character.display_name}", (point[0], point[1] - 64), 14, label_color, True)
 
 
-def _draw_player_roster(surface: pygame.Surface, match: MatchState) -> None:
+def _draw_player_roster(surface: pygame.Surface, match: MatchState, viewer_id: int = 0) -> None:
     panel = pygame.Rect(880, 500, 384, 174)
-    pygame.draw.rect(surface, config.PANEL_COLOR, panel, border_radius=8)
-    pygame.draw.rect(surface, config.PANEL_BORDER_COLOR, panel, 2, border_radius=8)
+    draw_panel(surface, panel, radius=8)
     draw_text(surface, "玩家／角色", (898, 510), 19, config.TEXT_COLOR)
-    for index, player in enumerate(match.players):
+    visible_players = [
+        player
+        for player in match.players
+        if is_player_visible_to_viewer(player, viewer_id, match.bushes)
+    ]
+    for index, player in enumerate(visible_players):
         column = index % 2
         row = index // 2
         center = (896 + column * 188, 544 + row * 37)
@@ -328,6 +439,55 @@ def _draw_directional_wedge(
     pygame.draw.lines(surface, color, False, arc_points, 3)
 
 
+def _draw_translucent_polygon(
+    surface: pygame.Surface,
+    points: list[tuple[int, int]],
+    color: tuple[int, int, int],
+    alpha: int,
+) -> None:
+    """只在幾何圖形的包圍盒建立 alpha surface，避免污染世界前景。"""
+
+    if len(points) < 3:
+        return
+    min_x = max(0, min(point[0] for point in points))
+    min_y = max(0, min(point[1] for point in points))
+    max_x = min(surface.get_width() - 1, max(point[0] for point in points))
+    max_y = min(surface.get_height() - 1, max(point[1] for point in points))
+    if min_x > max_x or min_y > max_y:
+        return
+    overlay = pygame.Surface((max_x - min_x + 1, max_y - min_y + 1), pygame.SRCALPHA)
+    local_points = [(x - min_x, y - min_y) for x, y in points]
+    pygame.draw.polygon(overlay, (*color, max(0, min(255, int(alpha)))), local_points)
+    surface.blit(overlay, (min_x, min_y))
+
+
+def _draw_filled_directional_wedge(
+    surface: pygame.Surface,
+    center: tuple[int, int],
+    direction: Vector2,
+    radius: float,
+    angle_degrees: float,
+    color: tuple[int, int, int],
+    alpha: int = 76,
+) -> list[tuple[int, int]]:
+    """繪製方向一致的填色扇形，回傳外弧點供呼叫端補上邊框。"""
+
+    safe_radius = max(1, round(radius))
+    heading = math.atan2(direction.y, direction.x)
+    half_angle = math.radians(angle_degrees) / 2
+    arc_points = [
+        _polar_point(
+            center,
+            heading - half_angle + 2 * half_angle * index / 16,
+            safe_radius,
+        )
+        for index in range(17)
+    ]
+    _draw_translucent_polygon(surface, [center, *arc_points], color, alpha)
+    pygame.draw.lines(surface, color, False, [center, *arc_points], 2)
+    return arc_points
+
+
 def _aim_guide_color(guide: AimGuide) -> tuple[int, int, int]:
     if not guide.valid:
         return config.AIM_GUIDE_INVALID_COLOR
@@ -343,10 +503,20 @@ def _draw_aim_guide(surface: pygame.Surface, match: MatchState, guide: AimGuide)
     if guide.shape == "wedge":
         if guide.path_points:
             points = [_screen_point(match, point) for point in guide.path_points]
+            _draw_translucent_polygon(surface, [origin, *points], color, 58)
             for point in points:
                 pygame.draw.line(surface, color, origin, point, 3)
             pygame.draw.lines(surface, color, False, points, 2)
         else:
+            _draw_filled_directional_wedge(
+                surface,
+                origin,
+                guide.direction,
+                min(guide.range, guide.origin.distance_to(guide.end)),
+                guide.angle_degrees,
+                color,
+                58,
+            )
             _draw_directional_wedge(
                 surface,
                 origin,
@@ -403,35 +573,41 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
     label = _PRIMARY_EFFECT_LABELS.get(kind)
 
     if kind == "breach_cone":
-        _draw_directional_wedge(
+        cone_origin = _screen_point(match, effect.origin)
+        front_distance = min(effect.max_distance, max(0.0, effect.distance_travelled))
+        arc_points = _draw_filled_directional_wedge(
             surface,
-            point,
+            cone_origin,
             direction,
-            effect.max_distance,
+            front_distance,
             float(effect.metadata.get("angle", 60)),
-            config.WARNING_COLOR,
+            config.ABILITY_COLORS["breach"],
+            82,
         )
-        heading = math.atan2(direction.y, direction.x)
-        half_angle = math.radians(float(effect.metadata.get("angle", 60))) / 2
-        for fraction in (0.35, 0.65, 1.0):
-            pygame.draw.line(
-                surface,
-                config.WARNING_COLOR,
-                point,
-                _polar_point(point, heading - half_angle + 2 * half_angle * fraction, effect.max_distance),
-                2,
-            )
+        if arc_points:
+            pygame.draw.lines(surface, config.ABILITY_COLORS["breach"], False, arc_points, 3)
+        for result in effect.metadata.get("impact_results", {}).values():
+            if not isinstance(result, dict):
+                continue
+            impact_position = result.get("position")
+            if not isinstance(impact_position, Vector2):
+                continue
+            impact_point = _screen_point(match, impact_position)
+            impact_color = config.EXTRACTION_COLOR if result.get("effective_damage", 0) > 0 else config.DANGER_COLOR
+            pygame.draw.circle(surface, impact_color, impact_point, 20, 3)
+            pygame.draw.line(surface, impact_color, (impact_point[0] - 12, impact_point[1]), (impact_point[0] + 12, impact_point[1]), 2)
+            pygame.draw.line(surface, impact_color, (impact_point[0], impact_point[1] - 12), (impact_point[0], impact_point[1] + 12), 2)
     elif kind == "breach_pellet":
         tail = effect.metadata.get("visible_start")
         if not isinstance(tail, Vector2):
             tail = effect.position - direction * 26
         screen_tail = _screen_point(match, tail)
-        pygame.draw.line(surface, config.WARNING_COLOR, screen_tail, point, 4)
-        pygame.draw.circle(surface, config.WARNING_COLOR, point, 6)
+        pygame.draw.line(surface, config.ABILITY_COLORS["breach"], screen_tail, point, 4)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["breach"], point, 6)
         pygame.draw.circle(surface, config.TEXT_COLOR, point, 6, 1)
     elif kind == "sniper_line":
         impact_blocked = bool(effect.metadata.get("impact_blocked", 0))
-        impact_color = config.DANGER_COLOR if impact_blocked else config.EXTRACTION_COLOR
+        impact_color = config.DANGER_COLOR if impact_blocked else config.ABILITY_COLORS["sniper"]
         if effect.metadata.get("impacted"):
             impact = effect.impact_position or effect.position
             impact_point = _screen_point(match, impact)
@@ -443,12 +619,12 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
             if not isinstance(tail, Vector2):
                 tail = effect.position - direction * 42
             screen_tail = _screen_point(match, tail)
-            pygame.draw.line(surface, config.EXTRACTION_COLOR, screen_tail, point, 6)
-            pygame.draw.circle(surface, config.EXTRACTION_COLOR, point, 9)
+            pygame.draw.line(surface, config.ABILITY_COLORS["sniper"], screen_tail, point, 6)
+            pygame.draw.circle(surface, config.ABILITY_COLORS["sniper"], point, 9)
             pygame.draw.circle(surface, config.TEXT_COLOR, point, 9, 2)
     elif kind == "sniper_ultimate_line":
         end = effect.position + direction * effect.max_distance
-        line_color = config.EXTRACTION_COLOR
+        line_color = config.ABILITY_COLORS["sniper"]
         pygame.draw.line(surface, line_color, point, _screen_point(match, end), 8)
         pygame.draw.line(surface, config.TEXT_COLOR, point, _screen_point(match, end), 2)
         pygame.draw.circle(surface, line_color, point, 9, 2)
@@ -459,20 +635,20 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
             direction,
             effect.max_distance,
             float(effect.metadata.get("angle", 100)),
-            config.TEXT_COLOR,
+            config.ABILITY_COLORS["guardian"],
         )
     elif kind == "boomerang":
         tail = effect.metadata.get("visible_start")
         if not isinstance(tail, Vector2):
             tail = effect.position - direction * 48
-        pygame.draw.line(surface, config.ACCENT_COLOR, _screen_point(match, tail), point, 6)
+        pygame.draw.line(surface, config.ABILITY_COLORS["hunter"], _screen_point(match, tail), point, 6)
         blade = [
             _oriented_point(point, direction, 23, 0),
             _oriented_point(point, direction, 0, 11),
             _oriented_point(point, direction, -23, 0),
             _oriented_point(point, direction, 0, -11),
         ]
-        pygame.draw.polygon(surface, config.ACCENT_COLOR, blade)
+        pygame.draw.polygon(surface, config.ABILITY_COLORS["hunter"], blade)
         pygame.draw.polygon(surface, config.TEXT_COLOR, blade, 2)
         pygame.draw.circle(surface, config.TEXT_COLOR, point, 6, 2)
     elif kind == "mine":
@@ -482,24 +658,24 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
             if not isinstance(tail, Vector2) and owner is not None:
                 tail = owner.position
             if isinstance(tail, Vector2):
-                pygame.draw.line(surface, config.WARNING_COLOR, _screen_point(match, tail), point, 3)
-            pygame.draw.circle(surface, config.WARNING_COLOR, point, 9, 2)
+                pygame.draw.line(surface, config.ABILITY_COLORS["controller"], _screen_point(match, tail), point, 3)
+            pygame.draw.circle(surface, config.ABILITY_COLORS["controller"], point, 9, 2)
             pygame.draw.circle(surface, config.TEXT_COLOR, point, 4)
         else:
             radius = max(24, round(float(effect.metadata.get("area_radius", effect.radius))))
-            pygame.draw.circle(surface, config.WARNING_COLOR, point, radius, 3)
-            pygame.draw.circle(surface, config.WARNING_COLOR, point, max(7, radius // 5), 2)
-            pygame.draw.line(surface, config.WARNING_COLOR, (point[0] - 10, point[1] - 10), (point[0] + 10, point[1] + 10), 2)
-            pygame.draw.line(surface, config.WARNING_COLOR, (point[0] + 10, point[1] - 10), (point[0] - 10, point[1] + 10), 2)
+            pygame.draw.circle(surface, config.ABILITY_COLORS["controller"], point, radius, 3)
+            pygame.draw.circle(surface, config.ABILITY_COLORS["controller"], point, max(7, radius // 5), 2)
+            pygame.draw.line(surface, config.ABILITY_COLORS["controller"], (point[0] - 10, point[1] - 10), (point[0] + 10, point[1] + 10), 2)
+            pygame.draw.line(surface, config.ABILITY_COLORS["controller"], (point[0] + 10, point[1] - 10), (point[0] - 10, point[1] + 10), 2)
     elif kind == "beam":
         end = effect.position + direction * effect.max_distance
         screen_end = _screen_point(match, end)
-        pygame.draw.line(surface, config.ACCENT_COLOR, point, screen_end, 10)
+        pygame.draw.line(surface, config.ABILITY_COLORS["siphoner"], point, screen_end, 10)
         pygame.draw.line(surface, config.TEXT_COLOR, point, screen_end, 3)
         pygame.draw.circle(surface, config.ACCENT_COLOR, point, 12, 2)
     elif kind in {"breach_burst", "siphon_burst"}:
         radius = max(30, round(effect.radius))
-        color = config.WARNING_COLOR if kind == "breach_burst" else config.EXTRACTION_COLOR
+        color = config.ABILITY_COLORS["breach"] if kind == "breach_burst" else config.ABILITY_COLORS["siphoner"]
         pygame.draw.circle(surface, color, point, radius, 5)
         pygame.draw.circle(surface, color, point, max(18, radius // 2), 2)
         for index in range(8):
@@ -512,23 +688,23 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
             )
     elif kind == "guardian_guard":
         pygame.draw.circle(surface, config.TEXT_COLOR, point, 38, 4)
-        pygame.draw.circle(surface, config.ACCENT_COLOR, point, 29, 2)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["guardian"], point, 29, 2)
     elif kind == "hunter_dash":
         end = effect.position + direction * effect.max_distance
         screen_end = _screen_point(match, end)
-        pygame.draw.line(surface, config.ACCENT_COLOR, point, screen_end, 10)
+        pygame.draw.line(surface, config.ABILITY_COLORS["hunter"], point, screen_end, 10)
         pygame.draw.line(surface, config.TEXT_COLOR, point, screen_end, 3)
-        pygame.draw.circle(surface, config.ACCENT_COLOR, point, 20, 3)
-        pygame.draw.circle(surface, config.ACCENT_COLOR, screen_end, 20, 3)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["hunter"], point, 20, 3)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["hunter"], screen_end, 20, 3)
     elif kind == "gravity_cage":
         radius = max(30, round(effect.radius))
-        pygame.draw.circle(surface, config.WARNING_COLOR, point, radius, 5)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["controller"], point, radius, 5)
         pygame.draw.circle(surface, config.EXTRACTION_COLOR, point, max(18, radius - 24), 2)
         for index in range(4):
             angle = index * math.pi / 2 + math.pi / 4
             pygame.draw.line(
                 surface,
-                config.WARNING_COLOR,
+                config.ABILITY_COLORS["controller"],
                 _polar_point(point, angle, radius - 14),
                 _polar_point(point, angle + math.pi, radius - 14),
                 2,
@@ -536,11 +712,11 @@ def _draw_ability_effect(surface: pygame.Surface, match: MatchState, effect: Abi
     elif kind == "dash":
         end = effect.position + direction * effect.max_distance
         screen_end = _screen_point(match, end)
-        pygame.draw.line(surface, config.ACCENT_COLOR, point, screen_end, 8)
-        pygame.draw.circle(surface, config.ACCENT_COLOR, point, 24, 3)
+        pygame.draw.line(surface, config.ABILITY_COLORS["tactical"], point, screen_end, 8)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["tactical"], point, 24, 3)
         pygame.draw.circle(surface, config.TEXT_COLOR, screen_end, 12, 2)
     elif kind == "shield":
-        pygame.draw.circle(surface, config.EXTRACTION_COLOR, point, 36, 5)
+        pygame.draw.circle(surface, config.ABILITY_COLORS["tactical"], point, 36, 5)
         pygame.draw.circle(surface, config.TEXT_COLOR, point, 28, 2)
     elif kind == "control_zone":
         radius = max(24, round(effect.radius))
@@ -606,7 +782,181 @@ def _draw_defense_status(surface: pygame.Surface, player: PlayerState, point: tu
     draw_text(surface, label, (point[0], point[1] + config.PLAYER_DRAW_RADIUS + 16), 12, color, True)
 
 
-def draw_world(surface: pygame.Surface, match: MatchState, input_state: InputState | None = None) -> None:
+def _monster_color(monster_type: MonsterType) -> tuple[int, int, int]:
+    return {
+        MonsterType.CHASER: config.MONSTER_CHASER_COLOR,
+        MonsterType.SHOOTER: config.MONSTER_SHOOTER_COLOR,
+        MonsterType.BRUTE: config.MONSTER_BRUTE_COLOR,
+    }.get(monster_type, config.MONSTER_COLOR)
+
+
+def _draw_monster_shape(
+    surface: pygame.Surface,
+    center: tuple[int, int],
+    radius: int,
+    monster_type: MonsterType,
+    direction: Vector2,
+) -> None:
+    """用形狀區分三種怪物，不依賴額外圖片素材。"""
+
+    radius = max(7, int(radius))
+    color = _monster_color(monster_type)
+    heading = _effect_direction(direction)
+    if monster_type == MonsterType.CHASER:
+        pygame.draw.circle(surface, color, center, radius)
+        pygame.draw.circle(surface, config.TEXT_COLOR, center, radius, 2)
+        pygame.draw.circle(surface, config.DANGER_COLOR, center, max(3, radius // 3))
+        return
+    if monster_type == MonsterType.SHOOTER:
+        points = [
+            _oriented_point(center, heading, radius * 1.35, 0),
+            _oriented_point(center, heading, 0, radius * 0.9),
+            _oriented_point(center, heading, -radius * 1.35, 0),
+            _oriented_point(center, heading, 0, -radius * 0.9),
+        ]
+        pygame.draw.polygon(surface, color, points)
+        pygame.draw.polygon(surface, config.TEXT_COLOR, points, 2)
+        pygame.draw.circle(surface, config.DANGER_COLOR, center, max(3, radius // 3))
+        return
+    points = [
+        _polar_point(center, math.radians(30 + index * 60), radius)
+        for index in range(6)
+    ]
+    pygame.draw.polygon(surface, color, points)
+    pygame.draw.polygon(surface, config.TEXT_COLOR, points, 2)
+    pygame.draw.line(surface, config.DANGER_COLOR, (center[0] - radius // 2, center[1]), (center[0] + radius // 2, center[1]), 3)
+
+
+def _draw_monster_projectile(
+    surface: pygame.Surface,
+    match: MatchState,
+    projectile,
+) -> None:
+    point = _screen_point(match, projectile.position)
+    if projectile.impact_position is not None:
+        impact = _screen_point(match, projectile.impact_position)
+        color = config.DANGER_COLOR if projectile.impact_status != "命中" else config.EXTRACTION_COLOR
+        pygame.draw.circle(surface, color, impact, 17, 3)
+        pygame.draw.line(surface, color, (impact[0] - 11, impact[1] - 11), (impact[0] + 11, impact[1] + 11), 2)
+        pygame.draw.line(surface, color, (impact[0] + 11, impact[1] - 11), (impact[0] - 11, impact[1] + 11), 2)
+        draw_text(surface, f"怪物子彈｜{projectile.impact_status}", (impact[0], impact[1] - 25), 13, color, True)
+        return
+    tail = _screen_point(match, projectile.previous_position)
+    pygame.draw.line(surface, config.MONSTER_PROJECTILE_COLOR, tail, point, 4)
+    pygame.draw.circle(surface, config.MONSTER_PROJECTILE_COLOR, point, max(4, round(projectile.radius)))
+    pygame.draw.circle(surface, config.TEXT_COLOR, point, max(4, round(projectile.radius)), 1)
+
+
+def _draw_auto_aim_marker(
+    surface: pygame.Surface,
+    match: MatchState,
+    result: AutoAimResult,
+) -> None:
+    if result.target_position is None:
+        return
+    marker = _screen_point(match, result.target_position)
+    color = config.ACCENT_COLOR
+    radius = max(8, int(config.AUTO_AIM_TARGET_MARKER_RADIUS))
+    pygame.draw.circle(surface, color, marker, radius, 2)
+    pygame.draw.line(surface, color, (marker[0] - radius - 4, marker[1]), (marker[0] + radius + 4, marker[1]), 1)
+    pygame.draw.line(surface, color, (marker[0], marker[1] - radius - 4), (marker[0], marker[1] + radius + 4), 1)
+    draw_text(surface, f"自動瞄準｜{result.lookback_seconds:.2f}s 前", (marker[0], marker[1] - radius - 19), 13, color, True)
+
+
+def _world_rect_to_screen(
+    left: int,
+    top: int,
+    width: int,
+    height: int,
+    camera: Vector2,
+) -> pygame.Rect:
+    """將設定中的世界矩形平移成 Pygame 畫面矩形。"""
+
+    top_left = world_to_screen(Vector2(left, top), camera)
+    return pygame.Rect(round(top_left.x), round(top_left.y), width, height)
+
+
+def _draw_bush(surface: pygame.Surface, rect: pygame.Rect) -> None:
+    """繪製草叢填色與少量葉片筆觸，讓草叢和地面有清楚差異。"""
+
+    pygame.draw.rect(surface, config.BUSH_COLOR, rect)
+    pygame.draw.rect(surface, config.BUSH_HIGHLIGHT_COLOR, rect, 1)
+
+    # 葉片只放在下方區域，避免覆蓋草叢中心的代表色，也讓無頭測試能穩定取樣。
+    leaf_step = max(24, rect.width // 4)
+    leaf_base_y = rect.bottom - 10
+    for x in range(rect.left + 12, rect.right - 8, leaf_step):
+        leaf_top_y = max(rect.top + 4, leaf_base_y - 10)
+        pygame.draw.line(
+            surface,
+            config.BUSH_HIGHLIGHT_COLOR,
+            (x - 4, leaf_base_y),
+            (x, leaf_top_y),
+            2,
+        )
+
+
+def _draw_wall(surface: pygame.Surface, rect: pygame.Rect, kind: str) -> None:
+    """繪製厚牆或薄牆，並以裂紋提示薄牆可破壞。"""
+
+    wall_color = config.THICK_WALL_COLOR if kind == "thick_wall" else config.THIN_WALL_COLOR
+    pygame.draw.rect(surface, wall_color, rect)
+    pygame.draw.rect(surface, config.WALL_BORDER_COLOR, rect, config.WALL_BORDER_WIDTH)
+
+    if kind != "thin_wall":
+        return
+
+    crack_count = max(0, config.THIN_WALL_CRACK_COUNT)
+    for index in range(crack_count):
+        # 將裂紋放在矩形的上、下分區，避免小型薄牆的中心被整條線蓋住。
+        vertical_fraction = 0.25 if index % 2 == 0 else 0.75
+        crack_x = rect.left + round(rect.width * (index + 1) / (crack_count + 1))
+        crack_y = rect.top + round(rect.height * vertical_fraction)
+        segment = max(4, min(16, min(rect.width, rect.height) // 4))
+        end_x = max(rect.left + 2, crack_x - max(3, segment // 2))
+        end_y = min(rect.bottom - 3, crack_y + max(3, segment // 2))
+        pygame.draw.line(
+            surface,
+            config.WALL_BORDER_COLOR,
+            (crack_x, crack_y),
+            (end_x, end_y),
+            config.THIN_WALL_CRACK_WIDTH,
+        )
+
+
+def draw_terrain(surface: pygame.Surface, match: MatchState) -> None:
+    """繪製正式配置中的全部草叢與牆體，不以文字標記取代地圖物件。"""
+
+    camera = match.camera.position
+    viewport = surface.get_rect()
+
+    # 草叢先畫，牆再畫；若日後配置邊界重疊，牆的阻擋輪廓仍會保持清楚。
+    for bush in match.bushes:
+        if not bush.active:
+            continue
+        bounds = bush.bounds
+        rect = _world_rect_to_screen(bounds.left, bounds.top, bounds.width, bounds.height, camera)
+        if rect.colliderect(viewport):
+            # Pygame 會自動裁切，但先跳過完全在視窗外的物件可避免每幀
+            # 對遠處地形做不必要的筆觸計算；裁切後的 Rect 仍保留相同顏色
+            # 與邊界，因此相機移動到物件時會在正式畫面立即出現。
+            _draw_bush(surface, rect.clip(viewport))
+
+    for obstacle in match.obstacles:
+        if not obstacle.solid:
+            continue
+        bounds = obstacle.bounds
+        rect = _world_rect_to_screen(bounds.left, bounds.top, bounds.width, bounds.height, camera)
+        if rect.colliderect(viewport):
+            _draw_wall(surface, rect.clip(viewport), obstacle.kind.value)
+
+
+def draw_world(
+    surface: pygame.Surface,
+    match: MatchState,
+    input_state: InputState | None = None,
+    viewer_id: int = 0,
+) -> None:
     """繪製地圖幾何圖形、玩家、怪物與撤離區。"""
 
     surface.fill(config.GROUND_COLOR)
@@ -619,6 +969,8 @@ def draw_world(surface: pygame.Surface, match: MatchState, input_state: InputSta
         start = world_to_screen(Vector2(0, y), camera)
         end = world_to_screen(Vector2(config.WORLD_WIDTH, y), camera)
         pygame.draw.line(surface, config.GRID_COLOR, start.tuple(), end.tuple(), 1)
+
+    draw_terrain(surface, match)
 
     for camp in config.MONSTER_CAMP_POINTS:
         point = _screen_point(match, camp)
@@ -635,9 +987,15 @@ def draw_world(surface: pygame.Surface, match: MatchState, input_state: InputSta
         if not monster.alive:
             continue
         point = _screen_point(match, monster.position)
-        pygame.draw.circle(surface, config.MONSTER_COLOR, point, config.MONSTER_DRAW_RADIUS)
+        monster_radius = max(10, round(monster.radius * 0.85))
+        _draw_monster_shape(surface, point, monster_radius, monster.monster_type, monster.aim_direction)
         _draw_health_bar(surface, point, monster.health, monster.max_health, -29, 58)
         draw_text(surface, f"{monster.health:.0f}/{monster.max_health:.0f}", (point[0], point[1] - 43), 12, config.TEXT_COLOR, True)
+        definition = get_monster_definition(monster.monster_type)
+        draw_text(surface, definition.display_name, (point[0], point[1] + monster_radius + 5), 12, _monster_color(monster.monster_type), True)
+
+    for projectile in match.monster_projectiles:
+        _draw_monster_projectile(surface, match, projectile)
 
     # 技能效果畫在怪物上方、玩家下方，確保範圍與投射物不會被地圖物件遮住。
     for effect in match.effects:
@@ -656,6 +1014,8 @@ def draw_world(surface: pygame.Surface, match: MatchState, input_state: InputSta
             )
 
     for player in match.players:
+        if not is_player_visible_to_viewer(player, viewer_id, match.bushes):
+            continue
         point = _screen_point(match, player.position)
         color = config.PLAYER_COLORS[player.player_id % len(config.PLAYER_COLORS)]
         if not player.alive:
@@ -682,36 +1042,81 @@ def draw_world(surface: pygame.Surface, match: MatchState, input_state: InputSta
         )
         _draw_defense_status(surface, player, point)
     if match.players and input_state is not None:
-        player = match.players[0]
+        player = next(
+            (candidate for candidate in match.players if candidate.player_id == viewer_id),
+            match.players[0],
+        )
         slot = _preview_slot(input_state)
-        if slot is not None and player.alive:
+        if (
+            slot is not None
+            and player.alive
+            and is_player_visible_to_viewer(player, viewer_id, match.bushes)
+        ):
+            manual_direction = input_state.aim_direction if input_state.aim_direction.length() else player.aim_direction
+            aim_result = resolve_auto_aim(
+                match,
+                player,
+                slot,
+                manual_direction,
+                obstacles=match.obstacles,
+            )
             guide = build_aim_guide(
                 player,
                 slot,
-                player.aim_direction,
+                aim_result.direction,
                 valid=_preview_is_valid(player, slot),
                 move_direction=input_state.move_direction,
+                range_override=aim_result.target_distance,
+                obstacles=match.obstacles,
             )
             _draw_aim_guide(surface, match, guide)
+            target = next(
+                (
+                    candidate
+                    for candidate in match.players
+                    if candidate.player_id == aim_result.target_id
+                ),
+            None)
+            if aim_result.has_target and (
+                target is None
+                or is_player_visible_to_viewer(target, viewer_id, match.bushes)
+            ):
+                _draw_auto_aim_marker(surface, match, aim_result)
 
 
-def draw_hud(surface: pygame.Surface, match: MatchState, input_state: InputState | None = None) -> None:
+def draw_hud(
+    surface: pygame.Surface,
+    match: MatchState,
+    input_state: InputState | None = None,
+    viewer_id: int = 0,
+) -> None:
     if not match.players:
         return
-    player = match.players[0]
-    panel = pygame.Rect(16, 16, 470, 276)
-    pygame.draw.rect(surface, config.PANEL_COLOR, panel, border_radius=8)
-    pygame.draw.rect(surface, config.PANEL_BORDER_COLOR, panel, 2, border_radius=8)
+    player = next(
+        (candidate for candidate in match.players if candidate.player_id == viewer_id),
+        match.players[0],
+    )
+    panel = pygame.Rect(16, 16, 470, 310)
+    draw_panel(surface, panel, radius=8)
     from .characters import get_character_definition, get_tactical_definition
 
     character = get_character_definition(player.character_id)
     tactical = get_tactical_definition(player.tactical_id)
-    draw_text(surface, f"玩家 0｜{character.display_name}", (30, 27), 24, config.TEXT_COLOR)
+    draw_text(surface, f"玩家 {player.player_id}｜{character.display_name}", (30, 27), 24, config.TEXT_COLOR)
     draw_text(surface, f"生命 {player.health:.0f}/{player.max_health:.0f}", (30, 58), 20, config.TEXT_COLOR)
     pellet_text = "×5" if player.character_id == CharacterId.BREACHER else "/0.15s" if player.character_id == CharacterId.SIPHONER else ""
     draw_text(surface, f"普攻火力 {character.primary_damage:.0f}{pellet_text}｜射程 {character.primary_range:.0f}", (30, 84), 18, config.ACCENT_COLOR)
     draw_text(surface, f"飛行速度 {_speed_label(player)}", (30, 108), 18, config.ACCENT_COLOR)
-    draw_text(surface, f"彈藥 {player.ammo}/{player.ammo_capacity}｜補彈計時 {player.ammo_recovery_timer:.1f}s", (30, 132), 18, config.ACCENT_COLOR)
+    character_recovery_interval = max(0.001, character.ammo_recovery_interval)
+    primary_held = bool(input_state is not None and input_state.primary_held)
+    if primary_attack_active(player, primary_held):
+        ammo_status = "恢復暫停（普攻中）"
+    elif player.ammo >= player.ammo_capacity:
+        ammo_status = "彈匣已滿"
+    else:
+        next_round = max(0.0, character_recovery_interval - player.ammo_recovery_timer)
+        ammo_status = f"下一發 {next_round:.1f}s"
+    draw_text(surface, f"彈藥 {player.ammo}/{player.ammo_capacity}｜{ammo_status}", (30, 132), 17, config.ACCENT_COLOR)
     draw_text(surface, f"大招能量 {player.ultimate_energy:.0f}%", (30, 156), 18, config.ACCENT_COLOR)
     primary_status = "可射擊" if player.primary_cooldown <= 0 else f"普攻冷卻 {player.primary_cooldown:.1f}s"
     tactical_status = "可使用" if player.tactical_cooldown <= 0 else f"配件冷卻 {player.tactical_cooldown:.1f}s"
@@ -725,12 +1130,20 @@ def draw_hud(surface: pygame.Surface, match: MatchState, input_state: InputState
         draw_text(surface, "普攻提示：按住左鍵維持吸能光束，放開停止", (30, 228), 16, config.MUTED_TEXT_COLOR)
     else:
         draw_text(surface, "普攻提示：按住瞄準、放開施放｜大招：右鍵", (30, 228), 16, config.MUTED_TEXT_COLOR)
+    auto_aim_state = "開啟" if player.auto_aim_enabled else "關閉"
+    draw_text(
+        surface,
+        f"自動瞄準：{auto_aim_state}（Tab）｜回看 {config.AUTO_AIM_LOOKBACK_SECONDS:.2f}s 前",
+        (30, 249),
+        15,
+        config.ACCENT_COLOR if player.auto_aim_enabled else config.MUTED_TEXT_COLOR,
+    )
     preview_slot = _preview_slot(input_state)
     if preview_slot is not None:
         preview_name = {"primary": "普攻", "ultimate": "大招", "tactical": "配件"}[preview_slot]
         preview_state = "可施放" if _preview_is_valid(player, preview_slot) else "資源／冷卻不足"
         preview_color = config.ACCENT_COLOR if preview_state == "可施放" else config.AIM_GUIDE_INVALID_COLOR
-        draw_text(surface, f"目前瞄準：{preview_name}｜{preview_state}", (30, 249), 16, preview_color)
+        draw_text(surface, f"目前瞄準：{preview_name}｜{preview_state}", (30, 270), 16, preview_color)
     active_status = None
     active_status_color = config.TEXT_COLOR
     if player.invulnerability_timer > 0.0:
@@ -749,24 +1162,31 @@ def draw_hud(surface: pygame.Surface, match: MatchState, input_state: InputState
         active_status = f"目前狀態：減速 {player.slow_multiplier:.1f}x｜{player.slow_timer:.1f}s"
         active_status_color = config.WARNING_COLOR
     if active_status:
-        draw_text(surface, active_status, (30, 267), 15, active_status_color)
+        draw_text(surface, active_status, (30, 288), 15, active_status_color)
     remaining = max(0.0, match.duration - match.elapsed_time)
     draw_text(surface, f"剩餘 {remaining:05.1f}s", (config.WINDOW_WIDTH - 180, 20), 28, config.WARNING_COLOR)
     if match.elapsed_time >= match.extraction_start_time:
         draw_text(surface, f"撤離進度 {player.extraction_progress:04.1f}/10.0s", (config.WINDOW_WIDTH - 270, 54), 20, config.EXTRACTION_COLOR)
-    draw_text(surface, "WASD 移動｜左鍵普攻｜右鍵大招｜Space 配件｜F1 測試", (16, config.WINDOW_HEIGHT - 30), 18, config.MUTED_TEXT_COLOR)
-    _draw_player_roster(surface, match)
+    draw_text(surface, "WASD 移動｜左鍵普攻｜右鍵大招｜Space 配件｜Tab 自瞄｜F1 測試", (16, config.WINDOW_HEIGHT - 30), 18, config.MUTED_TEXT_COLOR)
+    _draw_player_roster(surface, match, viewer_id)
     if match.developer_mode.enabled:
-        draw_text(surface, f"開發者模式｜假玩家 {match.developer_mode.selected_dummy_id}｜1～5選取 M放入 N返回", (16, 300), 19, config.WARNING_COLOR)
+        draw_text(surface, f"開發者模式｜假玩家 {match.developer_mode.selected_dummy_id}｜1～5選取 M放入 N返回", (16, 330), 19, config.WARNING_COLOR)
 
 
-def draw_match(surface: pygame.Surface, match: MatchState, input_state: InputState | None = None) -> None:
-    draw_world(surface, match, input_state)
-    draw_hud(surface, match, input_state)
+def draw_match(
+    surface: pygame.Surface,
+    match: MatchState,
+    input_state: InputState | None = None,
+    viewer_id: int = 0,
+) -> None:
+    draw_world(surface, match, input_state, viewer_id)
+    draw_hud(surface, match, input_state, viewer_id)
 
 
 def draw_result(surface: pygame.Surface, match: MatchState) -> None:
     surface.fill(config.BACKGROUND_COLOR)
+    panel = pygame.Rect(config.WINDOW_WIDTH // 2 - 310, 190, 620, 220)
+    draw_panel(surface, panel, radius=12)
     if match.phase == MatchPhase.VICTORY:
         title = f"玩家 {match.winner_id} 獲勝！"
         color = config.ACCENT_COLOR

@@ -204,6 +204,7 @@ class TraditionalChineseFontTests(unittest.TestCase):
             other.alive = False
         sniper.position = Vector2(500, 260)
         target.position = Vector2(650, 260)
+        sniper.auto_aim_enabled = False
         target_health = target.health
 
         with patch("pygame.mouse.get_pressed", side_effect=[(True, False, False), (False, False, False)]):
@@ -223,6 +224,8 @@ class TraditionalChineseFontTests(unittest.TestCase):
             )
         release.aim_direction = Vector2(1, 0)
         update_match(match, release, 0.05)
+        update_match(match, InputState(aim_direction=Vector2(1, 0)), 0.05)
+        update_match(match, InputState(aim_direction=Vector2(1, 0)), 0.05)
         update_match(match, InputState(aim_direction=Vector2(1, 0)), 0.05)
 
         self.assertLess(target.health, target_health)
@@ -266,6 +269,75 @@ class TraditionalChineseFontTests(unittest.TestCase):
             if 0 <= x < surface.get_width() and 0 <= y < surface.get_height()
         )
         self.assertGreater(visible_pixels, 20)
+
+    def test_all_confirmed_walls_and_bushes_are_rendered_on_the_map_layer(self) -> None:
+        match = create_match()
+        match.camera.position = Vector2()
+        surface = pygame.Surface((config.WORLD_WIDTH, config.WORLD_HEIGHT))
+        surface.fill(config.GROUND_COLOR)
+
+        rendering.draw_terrain(surface, match)
+
+        for kind, left, top, width, height in config.OBSTACLE_LAYOUT:
+            point = (left + width // 2, top + height // 2)
+            expected_color = (
+                config.THICK_WALL_COLOR
+                if kind == "thick_wall"
+                else config.THIN_WALL_COLOR
+            )
+            self.assertEqual(
+                surface.get_at(point)[:3],
+                expected_color,
+                f"{kind} at {point} should be visible with its configured fill color",
+            )
+
+        for left, top, width, height in config.BUSH_LAYOUT:
+            point = (left + width // 2, top + height // 2)
+            self.assertEqual(
+                surface.get_at(point)[:3],
+                config.BUSH_COLOR,
+                f"bush at {point} should be visible with its configured fill color",
+            )
+
+    def test_confirmed_terrain_is_visible_in_the_actual_game_viewport_after_camera_moves(self) -> None:
+        """正式 1280×720 畫面移到不同世界區域時，牆與草叢都能被取樣。"""
+
+        match = create_match()
+        # 移除會遮住取樣點的生物，只驗證 draw_match 的正式地圖繪製鏈。
+        match.players = []
+        match.monsters = []
+        surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+
+        for _ in range(20):
+            # 開場左上視角：這兩個點位於第一個視窗內，且不在 HUD 區域。
+            match.camera.position = Vector2(0, 0)
+            rendering.draw_match(surface, match)
+            self.assertEqual(surface.get_at((1030, 450))[:3], config.THICK_WALL_COLOR)
+            self.assertEqual(surface.get_at((970, 280))[:3], config.BUSH_COLOR)
+
+            # 移到地圖右下區域：確認世界座標不是只在開場畫面硬編碼繪製。
+            match.camera.position = Vector2(1200, 700)
+            rendering.draw_match(surface, match)
+            self.assertEqual(surface.get_at((860, 550))[:3], config.THIN_WALL_COLOR)
+            self.assertEqual(surface.get_at((770, 30))[:3], config.BUSH_COLOR)
+
+    def test_destroyed_terrain_is_removed_from_the_next_map_draw(self) -> None:
+        match = create_match()
+        match.camera.position = Vector2()
+        surface = pygame.Surface((config.WORLD_WIDTH, config.WORLD_HEIGHT))
+
+        wall = match.obstacles[4]
+        bush = match.bushes[0]
+        wall_center = (round(wall.bounds.center.x), round(wall.bounds.center.y))
+        bush_center = (round(bush.bounds.center.x), round(bush.bounds.center.y))
+        wall.destroyed = True
+        bush.active = False
+        surface.fill(config.GROUND_COLOR)
+
+        rendering.draw_terrain(surface, match)
+
+        self.assertEqual(surface.get_at(wall_center)[:3], config.GROUND_COLOR)
+        self.assertEqual(surface.get_at(bush_center)[:3], config.GROUND_COLOR)
 
     def test_every_role_primary_and_ultimate_creates_a_visual_effect(self) -> None:
         expected_primary = {
@@ -422,10 +494,94 @@ class TraditionalChineseFontTests(unittest.TestCase):
         update_match(mine_match, InputState(), 0.05)
         mine = next(effect for effect in mine_match.effects if effect.kind == "mine")
         self.assertFalse(mine.armed)
-        for _ in range(14):
+        for _ in range(26):
             update_match(mine_match, InputState(), 0.05)
         self.assertTrue(mine.armed)
         rendering.draw_match(pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT)), mine_match)
+
+    def test_all_combat_effect_states_render_without_external_assets(self) -> None:
+        """六角色、三配件與命中狀態均可在無頭 surface 上繪製。"""
+
+        surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+        for role in CharacterId:
+            match = create_match(role)
+            owner = match.players[0]
+            for other in match.players[1:]:
+                other.alive = False
+            owner.primary_cooldown = 0.0
+            primary = create_primary_action(owner, Vector2(1, 0), 0.6)
+            self.assertIsNotNone(primary)
+            _apply_action(match, primary)
+            owner.ultimate_energy = 100.0
+            ultimate = create_ultimate_action(owner, Vector2(1, 0))
+            self.assertIsNotNone(ultimate)
+            _apply_action(match, ultimate)
+            for effect in match.effects:
+                effect.metadata.setdefault("impact_status", "命中")
+            rendering.draw_match(surface, match, InputState(aim_direction=Vector2(1, 0)))
+
+        for tactical in TacticalId:
+            match = create_match(selected_tactical=tactical)
+            owner = match.players[0]
+            action = create_tactical_action(owner, Vector2(1, 0), Vector2(1, 0))
+            self.assertIsNotNone(action)
+            _apply_action(match, action)
+            rendering.draw_match(surface, match, InputState(aim_direction=Vector2(1, 0)))
+
+    def test_gui_panels_use_local_alpha_without_fading_world_or_text(self) -> None:
+        background = (90, 100, 110)
+        for opacity in (50, 78, 90, 49, 91):
+            surface = pygame.Surface((240, 160))
+            surface.fill(background)
+            panel = pygame.Rect(20, 20, 120, 80)
+            rendering.draw_panel(surface, panel, opacity_percent=opacity)
+            inside = surface.get_at((70, 60))[:3]
+            outside = surface.get_at((5, 5))[:3]
+            self.assertEqual(outside, background)
+            self.assertNotEqual(inside, background)
+            self.assertNotEqual(inside, config.PANEL_COLOR)
+
+            rendering.draw_text(surface, "清晰", (34, 38), 20, config.TEXT_COLOR)
+            text_pixels = sum(
+                surface.get_at((x, y))[:3] == config.TEXT_COLOR
+                for x in range(20, 140)
+                for y in range(20, 100)
+            )
+            self.assertGreater(text_pixels, 0)
+
+    def test_selection_and_result_panels_render_at_all_supported_opacities(self) -> None:
+        surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+        match = create_match()
+        for opacity in (50, 78, 90, 49, 91):
+            with patch.object(config, "GUI_OPACITY_PERCENT", opacity):
+                rendering.draw_selection(surface, 0, 0)
+                rendering.draw_result(surface, match)
+
+    def test_repeated_ability_rendering_smoke_runs_twenty_times_per_slot(self) -> None:
+        surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+        for role in CharacterId:
+            for _ in range(20):
+                match = create_match(role)
+                owner = match.players[0]
+                for other in match.players[1:]:
+                    other.alive = False
+                owner.primary_cooldown = 0.0
+                primary = create_primary_action(owner, Vector2(1, 0), 0.6)
+                self.assertIsNotNone(primary)
+                _apply_action(match, primary)
+                owner.ultimate_energy = 100.0
+                ultimate = create_ultimate_action(owner, Vector2(1, 0))
+                self.assertIsNotNone(ultimate)
+                _apply_action(match, ultimate)
+                rendering.draw_match(surface, match, InputState(aim_direction=Vector2(1, 0)))
+
+        for tactical in TacticalId:
+            for _ in range(20):
+                match = create_match(selected_tactical=tactical)
+                action = create_tactical_action(match.players[0], Vector2(1, 0), Vector2(1, 0))
+                self.assertIsNotNone(action)
+                _apply_action(match, action)
+                rendering.draw_match(surface, match, InputState(aim_direction=Vector2(1, 0)))
 
 
 if __name__ == "__main__":

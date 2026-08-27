@@ -1,6 +1,7 @@
 """PvPvE 純規則與初始化測試。"""
 
 import unittest
+import math
 
 from pvpve_escape import config
 from pvpve_escape.aiming import build_aim_guide
@@ -22,6 +23,7 @@ from pvpve_escape.rules import (
     apply_monster_kill_upgrade,
     calculate_upgrade_multiplier,
     handle_player_death,
+    primary_attack_active,
     recover_ammo,
     respawn_player,
     update_player_timers,
@@ -135,7 +137,10 @@ class WorldBoundaryTests(unittest.TestCase):
 
             update_world(match, {0: InputState()}, 0.05)
 
-            self.assertEqual(effect.position.tuple(), cast_position.tuple(), role)
+            if role == CharacterId.BREACHER:
+                self.assertEqual(effect.origin.tuple(), cast_position.tuple(), role)
+            else:
+                self.assertEqual(effect.position.tuple(), cast_position.tuple(), role)
 
 
 class RestartTests(unittest.TestCase):
@@ -157,6 +162,44 @@ class CombatRuleTests(unittest.TestCase):
             player.ammo = 1
             recover_ammo(player, 1.0, 0.2)
             self.assertEqual(player.ammo, player.ammo_capacity)
+
+    def test_primary_attack_active_covers_hold_charge_and_cooldown(self) -> None:
+        player = create_match().players[0]
+        self.assertFalse(primary_attack_active(player))
+        self.assertTrue(primary_attack_active(player, primary_held=True))
+        player.primary_charge = 0.1
+        self.assertTrue(primary_attack_active(player))
+        player.primary_charge = 0.0
+        player.primary_cooldown = 0.1
+        self.assertTrue(primary_attack_active(player))
+        player.alive = False
+        self.assertFalse(primary_attack_active(player, primary_held=True))
+
+    def test_blocked_ammo_recovery_resets_timer_and_waits_after_release(self) -> None:
+        player = create_match().players[0]
+        player.ammo = player.ammo_capacity - 1
+        player.ammo_recovery_timer = 0.19
+
+        recover_ammo(player, 0.50, 0.20, blocked=True)
+
+        self.assertEqual(player.ammo, player.ammo_capacity - 1)
+        self.assertEqual(player.ammo_recovery_timer, 0.0)
+        recover_ammo(player, 0.19, 0.20)
+        self.assertEqual(player.ammo, player.ammo_capacity - 1)
+        recover_ammo(player, 0.01, 0.20)
+        self.assertEqual(player.ammo, player.ammo_capacity)
+
+    def test_full_ammo_and_dead_player_keep_recovery_timer_zero(self) -> None:
+        player = create_match().players[0]
+        player.ammo_recovery_timer = 0.4
+        recover_ammo(player, 0.5, 0.2)
+        self.assertEqual(player.ammo_recovery_timer, 0.0)
+        player.ammo = 0
+        player.ammo_recovery_timer = 0.4
+        player.alive = False
+        recover_ammo(player, 1.0, 0.2)
+        self.assertEqual(player.ammo, 0)
+        self.assertEqual(player.ammo_recovery_timer, 0.0)
 
     def test_energy_is_capped_and_upgrade_is_capped(self) -> None:
         match = create_match()
@@ -325,6 +368,7 @@ class CharacterDefinitionTests(unittest.TestCase):
         sniper.position = Vector2(500, 260)
         near_target.position = Vector2(650, 260)
         far_target.position = Vector2(800, 260)
+        sniper.auto_aim_enabled = False
         near_health = near_target.health
         far_health = far_target.health
 
@@ -334,6 +378,8 @@ class CharacterDefinitionTests(unittest.TestCase):
             0.05,
         )
         self.assertEqual(near_target.health, near_health)
+        update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
+        update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
         update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
 
         self.assertLess(near_target.health, near_health)
@@ -349,6 +395,7 @@ class CharacterDefinitionTests(unittest.TestCase):
             other.alive = False
         sniper.position = Vector2(500, 260)
         target.position = Vector2(650, 300)
+        sniper.auto_aim_enabled = False
         target_health = target.health
 
         update_world(
@@ -370,6 +417,7 @@ class CharacterDefinitionTests(unittest.TestCase):
             other.alive = False
         sniper.position = Vector2(500, 260)
         target.position = Vector2(650, 260)
+        sniper.auto_aim_enabled = False
         target_health = target.health
         target.shield_remaining = 100.0
         target.shield_timer = 2.0
@@ -379,6 +427,8 @@ class CharacterDefinitionTests(unittest.TestCase):
             {0: InputState(aim_direction=Vector2(1, 0), primary_pressed=True)},
             0.05,
         )
+        update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
+        update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
         update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
 
         impact = next(effect for effect in match.effects if effect.kind == "sniper_line")
@@ -397,12 +447,15 @@ class CharacterDefinitionTests(unittest.TestCase):
             other.alive = False
         sniper.position = Vector2(500, 260)
         target.position = Vector2(650, 260)
+        sniper.auto_aim_enabled = False
 
         update_world(
             match,
             {0: InputState(aim_direction=Vector2(1, 0), primary_pressed=True)},
             0.05,
         )
+        update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
+        update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
         update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
         impact = next(effect for effect in match.effects if effect.kind == "sniper_line")
         damage_position = impact.position.copy()
@@ -495,16 +548,22 @@ class AimAndProjectileRuleTests(unittest.TestCase):
     def _solo_match(self, role: CharacterId, tactical: TacticalId = TacticalId.DASH):
         match = create_match(role, tactical)
         match.monsters = []
+        # 角色投射物速度／技能數值的單元測試不依賴固定地圖阻擋；地形路徑另由
+        # test_terrain 與 feature 004 整合測試覆蓋。
+        match.obstacles = []
         for other in match.players[1:]:
             other.alive = False
         match.players[0].position = Vector2(500, 500)
         match.players[0].spawn_position = Vector2(500, 500)
         match.players[0].ability_input_blocked = False
+        match.players[0].auto_aim_enabled = False
         return match
 
     def _target_match(self, role: CharacterId, target_offset: Vector2):
         match = create_match(role)
         match.monsters = []
+        # 固定 TTK 夾具要量測技能本身，不讓新地圖牆體改變距離命中結果。
+        match.obstacles = []
         owner = match.players[0]
         target = match.players[1]
         owner.position = Vector2(500, 500)
@@ -513,17 +572,18 @@ class AimAndProjectileRuleTests(unittest.TestCase):
         target.max_health = 120.0
         target.health = 120.0
         target.radius = 40.0
+        owner.auto_aim_enabled = False
         for other in match.players[2:]:
             other.alive = False
         return match, owner, target
 
     def test_character_and_monster_balance_table_is_centralized(self) -> None:
         expected = {
-            CharacterId.BREACHER: (110.0, 7.0, 200.0, 900.0),
-            CharacterId.SNIPER: (80.0, 50.0, 1000.0, 1400.0),
+            CharacterId.BREACHER: (110.0, 7.0, 200.0, config.BREACH_PROJECTILE_SPEED),
+            CharacterId.SNIPER: (80.0, 50.0, 1000.0, config.SNIPER_PROJECTILE_SPEED),
             CharacterId.GUARDIAN: (115.0, 30.0, 125.0, 0.0),
-            CharacterId.HUNTER: (95.0, 24.0, 340.0, 520.0),
-            CharacterId.CONTROLLER: (90.0, 20.0, 460.0, 650.0),
+            CharacterId.HUNTER: (95.0, 24.0, 340.0, config.HUNTER_PROJECTILE_SPEED),
+            CharacterId.CONTROLLER: (90.0, 20.0, 460.0, config.MINE_PROJECTILE_SPEED),
             CharacterId.SIPHONER: (105.0, 6.0, 280.0, 0.0),
         }
         for role, values in expected.items():
@@ -733,11 +793,11 @@ class AimAndProjectileRuleTests(unittest.TestCase):
 
     def test_projectile_speed_snapshots_and_non_flying_effects(self) -> None:
         expected_speed = {
-            CharacterId.BREACHER: 900.0,
-            CharacterId.SNIPER: 1400.0,
+            CharacterId.BREACHER: config.BREACH_PROJECTILE_SPEED,
+            CharacterId.SNIPER: config.SNIPER_PROJECTILE_SPEED,
             CharacterId.GUARDIAN: 0.0,
-            CharacterId.HUNTER: 520.0,
-            CharacterId.CONTROLLER: 650.0,
+            CharacterId.HUNTER: config.HUNTER_PROJECTILE_SPEED,
+            CharacterId.CONTROLLER: config.MINE_PROJECTILE_SPEED,
             CharacterId.SIPHONER: 0.0,
         }
         expected_kind = {
@@ -758,7 +818,7 @@ class AimAndProjectileRuleTests(unittest.TestCase):
             self.assertTrue(effects, role)
             if role == CharacterId.BREACHER:
                 self.assertEqual(len(effects), 5)
-                self.assertTrue(all(effect.projectile_speed == 900.0 for effect in effects))
+                self.assertTrue(all(effect.projectile_speed == config.BREACH_PROJECTILE_SPEED for effect in effects))
             else:
                 self.assertEqual(effects[0].projectile_speed, expected_speed[role])
             self.assertTrue(all(not hasattr(effect, "speed") for effect in effects))
@@ -768,10 +828,10 @@ class AimAndProjectileRuleTests(unittest.TestCase):
 
     def test_projectiles_move_at_configured_speed_for_ten_frames(self) -> None:
         expected = {
-            CharacterId.BREACHER: (900.0, "breach_pellet"),
-            CharacterId.SNIPER: (1400.0, "sniper_line"),
-            CharacterId.HUNTER: (520.0, "boomerang"),
-            CharacterId.CONTROLLER: (650.0, "mine"),
+            CharacterId.BREACHER: (config.BREACH_PROJECTILE_SPEED, "breach_pellet"),
+            CharacterId.SNIPER: (config.SNIPER_PROJECTILE_SPEED, "sniper_line"),
+            CharacterId.HUNTER: (config.HUNTER_PROJECTILE_SPEED, "boomerang"),
+            CharacterId.CONTROLLER: (config.MINE_PROJECTILE_SPEED, "mine"),
         }
         for role, (speed, kind) in expected.items():
             match = self._solo_match(role)
@@ -786,6 +846,37 @@ class AimAndProjectileRuleTests(unittest.TestCase):
                 self.assertAlmostEqual(start.distance_to(effect.position), expected_distance, delta=0.5, msg=(role, frame))
                 if role == CharacterId.CONTROLLER and frame < 10:
                     self.assertFalse(effect.armed)
+
+    def test_four_flying_roles_hold_speed_within_five_percent_for_twenty_runs(self) -> None:
+        expected = {
+            CharacterId.BREACHER: (config.BREACH_PROJECTILE_SPEED, "breach_pellet"),
+            CharacterId.SNIPER: (config.SNIPER_PROJECTILE_SPEED, "sniper_line"),
+            CharacterId.HUNTER: (config.HUNTER_PROJECTILE_SPEED, "boomerang"),
+            CharacterId.CONTROLLER: (config.MINE_PROJECTILE_SPEED, "mine"),
+        }
+        delta_time = 0.05
+        for role, (speed, kind) in expected.items():
+            for _ in range(20):
+                match = self._solo_match(role)
+                action = create_primary_action(match.players[0], Vector2(1, 0))
+                self.assertIsNotNone(action)
+                assert action is not None
+                _apply_action(match, action)
+                effect = next(effect for effect in match.effects if effect.kind == kind)
+                expected_intervals = min(10, math.ceil(effect.max_distance / (speed * delta_time)))
+                observed_intervals = 0
+                for _ in range(expected_intervals):
+                    before = effect.position.copy()
+                    remaining = max(0.0, effect.max_distance - effect.distance_travelled)
+                    update_world(match, {0: InputState()}, delta_time)
+                    actual_step = before.distance_to(effect.position)
+                    expected_step = min(speed * delta_time, remaining)
+                    tolerance = max(0.5, expected_step * 0.05)
+                    self.assertAlmostEqual(actual_step, expected_step, delta=tolerance, msg=(role, observed_intervals))
+                    observed_intervals += 1
+                    if remaining <= 0.0 or effect.distance_travelled >= effect.max_distance - 0.001:
+                        break
+                self.assertEqual(observed_intervals, expected_intervals, role)
 
     def test_projectile_sweeps_and_controller_mine_only_arms_at_landing(self) -> None:
         for role in (CharacterId.BREACHER, CharacterId.SNIPER, CharacterId.HUNTER):
@@ -814,7 +905,7 @@ class AimAndProjectileRuleTests(unittest.TestCase):
             # 目標不在地雷中心，但在落地後 100 半徑控制區內；
             # 這能區分「投射物碰撞半徑」與「落地效果半徑」。
             target.position = owner.position + Vector2(540, 0)
-            for _ in range(14):
+            for _ in range(26):
                 update_world(match, {0: InputState()}, 0.05)
             self.assertLess(target.health, health_before)
             self.assertLess(target.slow_multiplier, 1.0)
@@ -829,7 +920,7 @@ class AimAndProjectileRuleTests(unittest.TestCase):
         health_after_outbound = target.health
         self.assertLess(health_after_outbound, target.max_health)
 
-        for _ in range(18):
+        for _ in range(50):
             update_world(match, {0: InputState()}, 0.05)
         self.assertLess(target.health, health_after_outbound)
 
@@ -851,6 +942,11 @@ class AimAndProjectileRuleTests(unittest.TestCase):
     def test_fixed_ttk_ranges_use_the_new_role_values(self) -> None:
         def run_burst(role: CharacterId, distance: float, step: float, repeat: int) -> int:
             match, owner, target = self._target_match(role, Vector2(distance, 0))
+            projectile_speed = get_character_definition(role).projectile_speed
+            effective_step = max(
+                step,
+                distance / projectile_speed + 0.10 if projectile_speed > 0.0 else step,
+            )
             for hit in range(1, repeat + 1):
                 owner.ammo = owner.ammo_capacity
                 owner.primary_cooldown = 0.0
@@ -861,7 +957,7 @@ class AimAndProjectileRuleTests(unittest.TestCase):
                 self.assertIsNotNone(action)
                 _apply_action(match, action)
                 if role != CharacterId.GUARDIAN:
-                    for _ in range(max(1, round(step / 0.05))):
+                    for _ in range(max(1, round(effective_step / 0.05))):
                         update_world(match, {0: InputState()}, 0.05)
                 if not target.alive:
                     return hit
