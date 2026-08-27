@@ -128,7 +128,7 @@
 
 1. 依 `specs/004-obstacles-breach-bushes/tasks.md` 的 T002 確認未提交工作已保留；因使用者要求不中斷目前工作，本次未切換至預定功能分支，實作仍在 `codex/003-combat-vfx-cone-ammo`，此為已記錄的分支例外。
 2. 效能量測已完成：預熱 60 幀後量測 600 幀／2.7823 秒／215.65 FPS，場景為 1280×720、6 名玩家、12 隻怪物與 34 個固定地形物件。
-3. T036 的遠端推送、PR、發布與合併已獲使用者授權，完成後在本節回填實際連結與 CI 結果。
+3. T036 已完成遠端推送與 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3)；本次流程完成合併並建立 [v0.1.0 發布標籤](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0)。專案未配置 GitHub Actions，故以本機驗證與 GitHub 可合併狀態作為檢查結果。
 
 ## 實作驗證狀態
 
@@ -137,4 +137,4 @@
 - 已完成：依使用者確認的 JSON 更新 `config.py` 與 [map-layout-draft.json](map-layout-draft.json)；全部紅框物件保留。
 - 已完成：`rendering.draw_terrain` 接入正式 `draw_match` → `draw_world` 地圖層，無頭 Pygame 確認完整世界的 34 個牆/草叢矩形，以及不同相機位置的正式 1280×720 畫面都可繪出對應物件。
 - 已完成：牆體碰撞、直線/飛行阻擋、Breacher/DASH 破壞、草叢觀看者隱藏、戰鬥恢復、入口煙霧與效能驗證。
-- 待本次交付流程完成：T036 的遠端分支推送、PR、發布與合併；目前保留現行分支，不切換或清理其他工作分支。
+- 已完成：T036 的遠端分支推送、[PR #3](https://github.com/KGeneral7/pythonSDD/pull/3)、合併與 [v0.1.0 發布標籤](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0)；目前保留現行分支，不切換或清理其他工作分支。

@@ -4,7 +4,7 @@
 **預定功能分支**：`codex/004-obstacles-breach-bushes`（本次依使用者要求保留現行 `codex/003-combat-vfx-cone-ammo` 工作樹）
 **本次交付分支**：`codex/003-combat-vfx-cone-ammo`（與已驗證的 003、005 跨檔案變更整合於同一 PR）
 **建立日期**：2026-08-27
-**狀態**：已實作（自動化驗證通過；互動視覺驗收步驟見 quickstart.md）
+**狀態**：已實作（自動化驗證通過；[PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 已建立並將合併，發布標籤為 `v0.1.0`）
 **輸入**：使用者需求：在 PvPvE 遊戲中加入地圖障礙物、破牆能力、可躲藏且可破壞的草叢，以及戰鬥外生命恢復。
 
 ## 使用者情境與測試
@@ -162,4 +162,4 @@
 
 - `pvpve_escape/tests` 完整 `unittest discover` 為 159/159 通過；地形、瞄準、渲染、觀看者可見性與恢復專用測試均通過。
 - `compileall`、`git diff --check`、dummy SDL 正式入口煙霧測試與 1280×720 固定地形效能測試均通過；預熱 60 幀後量測 600 幀為 215.65 FPS。
-- T036 的遠端推送、PR、發布與合併納入本次已授權的交付流程；完成後將在 `quickstart.md` 與 `tasks.md` 回填實際連結及結果。
+- T036 的遠端推送與 PR 已完成；本次流程完成合併後建立 [v0.1.0 發布標籤](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0)，實際連結已回填至 `quickstart.md` 與 `tasks.md`。

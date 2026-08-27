@@ -136,7 +136,7 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 - [x] T033 執行 `git diff --check` 檢查程式與測試變更空白；並檢閱 `terrain.py`、`world.py`、`rendering.py` 的匯入方向與 `requirements.txt`，確認無循環依賴或新增外部服務/套件。
 - [x] T034 依 `specs/004-obstacles-breach-bushes/quickstart.md` 以 `SDL_VIDEODRIVER=dummy` 啟動 `pvpve_escape.main.run()` 並注入單次 QUIT 完成入口端到端煙霧驗收；互動視覺清單保留供桌面使用者確認。
 - [x] T035 依 `pvpve_escape/__main__.py` 等價的正式更新/繪製鏈，在 1280×720、6 名玩家、12 隻怪物與 34 個固定地形物件場景中預熱 60 幀後量測 600 幀；2.7823 秒完成，平均 215.65 FPS，高於 55 FPS。
-- [ ] T036 在 `specs/004-obstacles-breach-bushes/quickstart.md` 記錄驗證結果後，將目前交付分支 `codex/003-combat-vfx-cone-ammo` 推送遠端並建立指向本功能文件的 PR，完成發布、CI 檢查與合併後回填連結；本次已取得使用者授權，保留現行分支以整合 003、004、005 的已驗證變更。
+- [x] T036 在 `specs/004-obstacles-breach-bushes/quickstart.md` 記錄驗證結果後，已將目前交付分支 `codex/003-combat-vfx-cone-ammo` 推送遠端並建立指向本功能文件的 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3)，確認 PR 可合併；本次流程完成合併並建立 [v0.1.0 發布標籤](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0)。專案未配置 GitHub Actions，故以本機驗證與 GitHub 可合併狀態完成檢查。
 
 ---
 
@@ -191,4 +191,4 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 - 每個使用者故事的測試先於實作建立，並在實作前確認會失敗。
 - `pvpve_escape/tests` 的新增測試、既有測試、`compileall`、`git diff --check` 與 `quickstart.md` 手動情境均有結果記錄。
 - 不新增 Pygame 以外依賴，不建立外部 API/服務，不覆蓋現有未提交工作變更。
-- T002 的工作樹保留例外與 T035 的效能門檻已完成並留下可追蹤記錄；T036 的外部 PR 生命週期已獲授權，完成後以實際連結與 CI 結果收尾。
+- T002 的工作樹保留例外與 T035 的效能門檻已完成並留下可追蹤記錄；T036 已以 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 與 [v0.1.0 發布標籤](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0) 收尾。

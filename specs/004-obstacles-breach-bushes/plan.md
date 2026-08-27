@@ -50,7 +50,7 @@
 
 ### 設計門檻結論
 
-設計門檻通過。為了不打斷當時進行中的工作，本次在現行 `codex/003-combat-vfx-cone-ammo` 工作樹完成實作；T002 已記錄分支例外與工作內容保留，T031～T035 已完成。現在已取得外部 Git 授權，T036 將以此現行分支完成整合 PR、發布與合併，不修改或重置其他未提交內容。
+設計門檻通過。為了不打斷當時進行中的工作，本次在現行 `codex/003-combat-vfx-cone-ammo` 工作樹完成實作；T002 已記錄分支例外與工作內容保留，T031～T035 已完成。現在已取得外部 Git 授權，T036 以此現行分支完成 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3)、合併與 [v0.1.0 發布標籤](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0)，不修改或重置其他未提交內容。
 
 ## 專案結構
 
@@ -281,7 +281,7 @@ rendering.py 增加：
     git diff --check
     .\.venv\Scripts\python.exe -m pvpve_escape
 
-自動化驗證與入口煙霧驗收已完成；互動視覺情境列於 quickstart.md 供使用者開啟遊戲確認。T036 的功能分支推送、PR、發布與合併屬本次已授權的外部 Git 交付步驟，完成後回填實際結果。
+自動化驗證與入口煙霧驗收已完成；互動視覺情境列於 quickstart.md 供使用者開啟遊戲確認。T036 的功能分支推送、[PR #3](https://github.com/KGeneral7/pythonSDD/pull/3)、合併與 [v0.1.0 發布標籤](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0) 已納入本次外部 Git 交付結果。
 
 ## 風險與處理方式
 
