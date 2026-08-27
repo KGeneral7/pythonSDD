@@ -13,14 +13,14 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 
 **任務格式**：`[P]` 表示可在不同檔案且無相互依賴的情況下平行執行；`[USn]` 表示所屬使用者故事。
 
-> 本輪依使用者確認保留現行 `codex/003-combat-vfx-cone-ammo` 工作狀態，未切換功能分支；先前已完成 US1 的地形顯示子任務 T009/T013。本次實作會在同一工作樹完成其餘地形、破壞、隱藏與恢復任務，並以例外紀錄取代會中斷既有工作的分支切換。
+> 本輪已完成工作樹保留檢查；發布交付使用 `codex/004-obstacles-breach-bushes`，先前已完成 US1 的地形顯示子任務 T009/T013。本次只納入已確認的程式、測試、SDD 與區域發布技能檔案，`day3/` 保留但不提交。
 
 ## 階段 1：設定（共用環境）
 
 **目的**：確認既有本地 Pygame 專案與基線狀態，讓後續任務可以辨識新回歸與工作區原有變更。
 
 - [x] T001 [P] 依 `pvpve_escape/requirements.txt` 與 `pvpve_escape/tests/test_helpers.py` 驗證 Python、Pygame、無頭 SDL 畫面（Surface）與既有測試工具可用，僅記錄環境結果，不修改遊戲邏輯；已確認 Python 3.11.5、Pygame 2.6.1、dummy SDL Surface 與既有測試工具可用。
-- [x] T002 執行 `pvpve_escape/tests` 的既有 unittest 基線，將實際結果記錄在 `specs/004-obstacles-breach-bushes/quickstart.md`，並把 `pvpve_escape/config.py` 未提交的不透明度設定變更所造成的既有失敗獨立列出；已確認工作樹內容保留。依使用者「不要中斷目前工作」要求，未切換至 `codex/004-obstacles-breach-bushes`，目前仍在 `codex/003-combat-vfx-cone-ammo`，例外與影響已記錄於文件。
+- [x] T002 執行 `pvpve_escape/tests` 的既有 unittest 基線，將實際結果記錄在 `specs/004-obstacles-breach-bushes/quickstart.md`，並把 `pvpve_escape/config.py` 未提交的不透明度設定變更所造成的既有失敗獨立列出；已確認工作樹內容保留，`day3/` 不納入發布提交，並建立符合 004 識別字的交付分支。
 
 ---
 
@@ -33,7 +33,7 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 - [x] T003 [P] 在 `pvpve_escape/models.py` 新增 `ObstacleKind`、`TerrainInteraction`、`WorldRect`、`ObstacleState`、`BushState` 與 `TerrainHitResult`，並以欄位追加方式擴充 `MatchState` 的 `obstacles`/`bushes`、`PlayerState` 的戰鬥計時、`CombatAction` 與 `AbilityEffect` 的地形互動欄位，保留既有位置參數建構相容性；新增欄位均追加於既有欄位之後，並由純地形測試驗證相容資料。
 - [x] T004 [P] 在 `pvpve_escape/config.py` 加入依使用者確認座標保存的 `OBSTACLE_LAYOUT`/`BUSH_LAYOUT`、厚牆/薄牆/草叢顏色、繪製邊框與裂紋參數、`PLAYER_REGEN_DELAY=5.0`、`PLAYER_REGEN_RATE=0.10` 及碰撞 epsilon/安全區警示參數；已確認的紅框重疊保留，不作為自動拒絕條件。
 - [x] T005 新增不依賴 Pygame 或 `world.py` 的 `pvpve_escape/terrain.py`，實作每場獨立建立障礙物/草叢、圓形對軸對齊矩形碰撞、X/Y 分軸移動解析、線段第一面牆掃掠與路徑端點解析，讓牆是阻擋物、草叢不進入固體碰撞清單；25 項純地形測試已通過。
-- [x] T006 在 `pvpve_escape/tests/test_terrain.py` 建立純地形基礎測試，涵蓋矩形邊界、已確認配置的紅框警示清單、薄厚牆型與草叢資料、圓形碰撞、牆角接觸、第一面牆命中及每場狀態為獨立複本；配置常數的 34 物件、世界邊界與 9 筆警示已先由 `test_config.py` 覆蓋；`test_terrain` 25/25 通過。
+- [x] T006 在 `pvpve_escape/tests/test_terrain.py` 建立純地形基礎測試，涵蓋矩形邊界、已確認配置的紅框警示清單、薄厚牆型與草叢資料、圓形碰撞、牆角接觸、第一面牆命中及每場狀態為獨立複本；配置常數的 45 物件、世界邊界與 5 筆警示已先由 `test_config.py` 覆蓋；`test_terrain` 25/25 通過。
 
 **檢查點**：資料模型、固定配置與純地形幾何可獨立測試；下一階段不得透過渲染結果反推碰撞規則。
 
@@ -49,7 +49,7 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 
 - [x] T007 [US1] 在 `pvpve_escape/tests/test_terrain.py` 補上使用者故事 1 的整合測試：`create_match` 固定配置重建、玩家/怪物正面與斜向移動、牆角不穿透、投射物半徑、牆前/牆後目標與同場破壞狀態持續；重置情境以 fixture 直接設定 `destroyed/active`，不依賴 US2 的能力實作，每個量化情境至少重複 20 次；25/25 通過。
 - [x] T008 [P] [US1] 在 `pvpve_escape/tests/test_aiming.py` 新增牆體瞄準預覽測試，確認 `build_aim_guide(..., obstacles=...)` 的線段/路徑端點與實際第一面牆一致，且省略參數仍保留既有呼叫結果；10/10 通過。
-- [x] T009 [P] [US1] 在 `pvpve_escape/tests/test_rendering.py` 新增地形渲染冒煙測試，確認完整世界畫布上的 18 個牆體與 16 個草叢都有配置填色，並在正式 1280×720 視窗的不同相機位置確認牆/草叢可見；地形層在角色/效果前繪製、厚牆與薄牆使用不同顏色與邊界樣式。
+- [x] T009 [P] [US1] 在 `pvpve_escape/tests/test_rendering.py` 新增地形渲染冒煙測試，確認完整世界畫布上的 18 個牆體與 27 個草叢都有配置填色，並在正式 1280×720 視窗的不同相機位置確認牆/草叢可見；地形層在角色/效果前繪製、厚牆與薄牆使用不同顏色與邊界樣式。
 
 ### 使用者故事 1 的實作
 
@@ -65,23 +65,23 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 
 ## 階段 4：使用者故事 2——使用適合的能力打通地圖路線（優先級：P1）
 
-**目標**：只有破陣者主要/終極技能與 `DASH` 能破壞薄牆和草叢；厚牆永不破壞；遠程破壞同次施放不可穿過剛移除的薄牆，而 DASH 只破壞第一面薄牆後完成剩餘位移，後續牆仍阻擋。
+**目標**：只有破陣者終極技能與 `DASH` 能破壞薄牆和草叢；破陣者主要技能與其他一般技能依 `BLOCK` 在牆前停止；厚牆永不破壞；具破壞資格的遠程效果同次施放不可穿過剛移除的薄牆，而 DASH 只破壞第一面薄牆後完成剩餘位移，後續牆仍阻擋。
 
-**獨立測試**：以破陣者、其他角色、`DASH`、`SHIELD`、`CONTROL` 分別測試薄牆、厚牆、多牆路徑與草叢，確認資格、一次命中、遠程快照與 DASH 路徑規則。
+**獨立測試**：以破陣者主要技能、終極技能、其他角色、`DASH`、`SHIELD`、`CONTROL` 分別測試薄牆、厚牆、多牆路徑與草叢，確認主要技能阻擋、終極/DASH 破壞資格、一次命中、遠程快照與 DASH 路徑規則。
 
 ### 使用者故事 2 的測試（先寫測試並確認失敗）
 
-- [x] T015 [P] [US2] 在 `pvpve_escape/tests/test_terrain.py`、`pvpve_escape/tests/test_aiming.py`、`pvpve_escape/tests/test_rendering.py` 與恢復/既有規則回歸中補上破壞權限與路徑測試，涵蓋 Breacher 主要/終極、非資格角色/配件、厚牆不可破壞、薄牆一次命中、遠程快照、DASH 多牆、草叢沿路徑移除及 DASH 預覽一致性；量化情境以固定重複測試覆蓋。
+- [x] T015 [P] [US2] 在 `pvpve_escape/tests/test_terrain.py`、`pvpve_escape/tests/test_aiming.py`、`pvpve_escape/tests/test_rendering.py` 與恢復/既有規則回歸中補上破壞權限與路徑測試，涵蓋 Breacher 主要技能阻擋、終極技能破壞、非資格角色/配件、厚牆不可破壞、薄牆一次命中、遠程快照、DASH 多牆、草叢沿路徑移除及 DASH 預覽一致性；量化情境以固定重複測試覆蓋。
 
 ### 使用者故事 2 的實作
 
-- [x] T016 [P] [US2] 在 `pvpve_escape/characters.py` 為 Breacher 主要技能、終極技能與 `TacticalId.DASH` 設定正確的 `TerrainInteraction`，確認其他角色與 `SHIELD`/`CONTROL` 明確維持 `BLOCK` 或無破壞資格。
+- [x] T016 [P] [US2] 在 `pvpve_escape/characters.py` 為 Breacher 主要技能設定 `BLOCK`、終極技能與 `TacticalId.DASH` 設定正確的破壞型 `TerrainInteraction`，確認其他角色與 `SHIELD`/`CONTROL` 明確維持 `BLOCK` 或無破壞資格。
 - [x] T017 [P] [US2] 在 `pvpve_escape/terrain.py` 實作 `destroy_thin_wall_on_path`、`destroy_terrain_in_radius`、`destroy_bushes_on_segment` 與不可變牆體阻擋快照所需的輔助函式；只允許薄牆/草叢由明確政策轉為無效，厚牆永遠保留。
-- [x] T018 [US2] 在 `pvpve_escape/world.py` 整合 Breacher 遠程路徑先取阻擋快照再破壞薄牆、Breacher 爆發範圍破壞、DASH 第一面薄牆破壞後的剩餘距離解析，以及所有合資格路徑上的草叢移除，並保持普通技能遇牆停止。
-- [x] T019 [US2] 在 `pvpve_escape/aiming.py` 與 `pvpve_escape/rendering.py` 讓 DASH/破牆能力預覽使用不修改狀態的同一路徑解析，表達第一面薄牆可破壞、下一面牆仍阻擋，且草叢不縮短預覽距離。
+- [x] T018 [US2] 在 `pvpve_escape/world.py` 整合 Breacher 主要技能的 BLOCK 牆前停止、Breacher 終極技能範圍破壞、具資格遠程路徑的阻擋快照、DASH 第一面薄牆破壞後的剩餘距離解析，以及所有合資格路徑上的草叢移除。
+- [x] T019 [US2] 在 `pvpve_escape/aiming.py` 與 `pvpve_escape/rendering.py` 讓主要技能預覽反映牆前阻擋，DASH/破牆能力預覽使用不修改狀態的同一路徑解析，表達第一面薄牆可破壞、下一面牆仍阻擋，且草叢不縮短預覽距離。
 - [x] T020 [US2] 執行 `pvpve_escape/tests/test_terrain.py`、`pvpve_escape/tests/test_rules.py`、`pvpve_escape/tests/test_aiming.py` 與 `pvpve_escape/tests/test_rendering.py` 的使用者故事 2 測試，並依 `specs/004-obstacles-breach-bushes/quickstart.md` 完成破牆、厚牆、DASH 與草叢破壞驗收。
 
-**檢查點**：US1 的牆體阻擋仍通過；US2 可單獨證明破壞資格與「遠程停、DASH 穿一面薄牆」的差異。
+**檢查點**：US1 的牆體阻擋仍通過；US2 可單獨證明主要技能停止、終極範圍破壞與「DASH 穿一面薄牆」的差異。
 
 ---
 
@@ -132,11 +132,11 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 **目的**：完成文件、全量驗證與手動驗收，確認所有使用者故事整合後仍符合既有專案限制與工作區安全要求。
 
 - [x] T031 將實作後的操作對照、測試命令、牆/草叢/恢復驗收清單與自動化結果、每項量化情境的實際重複次數與已知基線例外更新到 `specs/004-obstacles-breach-bushes/quickstart.md`，並核對 `specs/004-obstacles-breach-bushes/spec.md` 的 FR-001～FR-025 與 SC-001～SC-012。
-- [x] T032 執行 `pvpve_escape/tests` 的完整 unittest 與 `pvpve_escape` 的 `compileall`；目前完整套件 159/159 通過，未發現 GUI 不透明度或其他基線失敗。
+- [x] T032 執行 `pvpve_escape/tests` 的完整 unittest 與 `pvpve_escape` 的 `compileall`；目前完整套件 162/162 通過，未發現 GUI 不透明度或其他基線失敗。
 - [x] T033 執行 `git diff --check` 檢查程式與測試變更空白；並檢閱 `terrain.py`、`world.py`、`rendering.py` 的匯入方向與 `requirements.txt`，確認無循環依賴或新增外部服務/套件。
 - [x] T034 依 `specs/004-obstacles-breach-bushes/quickstart.md` 以 `SDL_VIDEODRIVER=dummy` 啟動 `pvpve_escape.main.run()` 並注入單次 QUIT 完成入口端到端煙霧驗收；互動視覺清單保留供桌面使用者確認。
-- [x] T035 依 `pvpve_escape/__main__.py` 等價的正式更新/繪製鏈，在 1280×720、6 名玩家、12 隻怪物與 34 個固定地形物件場景中預熱 60 幀後量測 600 幀；2.7823 秒完成，平均 215.65 FPS，高於 55 FPS。
-- [x] T036 在 `specs/004-obstacles-breach-bushes/quickstart.md` 記錄驗證結果後，已將目前交付分支 `codex/003-combat-vfx-cone-ammo` 推送遠端並建立指向本功能文件的 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3)，確認 PR 可合併；本次流程完成合併並建立 [v0.1.0 發布標籤](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0)。專案未配置 GitHub Actions，故以本機驗證與 GitHub 可合併狀態完成檢查。
+- [x] T035 依 `pvpve_escape/__main__.py` 等價的正式更新/繪製鏈，在 1280×720、6 名玩家、12 隻怪物與 45 個固定地形物件場景中預熱 60 幀後量測 600 幀；3.4837 秒完成，平均 172.23 FPS，高於 55 FPS。
+- [ ] T036 在 `specs/004-obstacles-breach-bushes/quickstart.md` 記錄驗證結果後，將 `codex/004-obstacles-breach-bushes` 推送遠端並建立指向本功能文件的非 draft PR，確認最新 head 可合併；合併後建立 `v0.2.0` annotated tag 與正式 release，最後依憲章清理遠端與本地功能分支。專案未配置 GitHub Actions 時，以本機驗證與 GitHub 可合併狀態作為檢查結果。
 
 ---
 
@@ -181,7 +181,7 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 
 ### 增量交付
 
-1. 在 MVP 後加入 US2，交付 Breacher/DASH 的薄牆與草叢破壞，維持厚牆和遠程快照不變。
+1. 在 MVP 後加入 US2，交付 Breacher 終極技能/DASH 的薄牆與草叢破壞，並讓 Breacher 主要技能維持 BLOCK；厚牆和具資格遠程快照規則不變。
 2. 加入 US3，交付自身可見、他人隱藏且不影響戰鬥的草叢觀看規則。
 3. 加入 US4，交付 5 秒脫戰門檻與最大生命值 10%/秒恢復。
 4. 每個故事完成後先執行自己的檢查點，再進入下一個故事；最後才執行全量回歸和手動驗收。
@@ -191,4 +191,4 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 - 每個使用者故事的測試先於實作建立，並在實作前確認會失敗。
 - `pvpve_escape/tests` 的新增測試、既有測試、`compileall`、`git diff --check` 與 `quickstart.md` 手動情境均有結果記錄。
 - 不新增 Pygame 以外依賴，不建立外部 API/服務，不覆蓋現有未提交工作變更。
-- T002 的工作樹保留例外與 T035 的效能門檻已完成並留下可追蹤記錄；T036 已以 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 與 [v0.1.0 發布標籤](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0) 收尾。
+- T002 的工作樹保留與 T035 的效能門檻已完成並留下可追蹤記錄；原始 PR #3／`v0.1.0` 為既有基線，T036 的本次 PR、release、合併與分支清理尚待完成。

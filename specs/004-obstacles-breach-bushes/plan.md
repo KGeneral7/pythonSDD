@@ -1,18 +1,19 @@
 # 實作計畫：地圖障礙物、破牆、草叢視線與戰鬥恢復
 
 **功能識別字**：004-obstacles-breach-bushes
-**預定功能分支**：codex/004-obstacles-breach-bushes（本次依使用者要求保留現行工作樹）
-**實作工作樹**：codex/003-combat-vfx-cone-ammo
-**本次交付分支**：codex/003-combat-vfx-cone-ammo（與 003、005 的已驗證變更整合交付）
+**預定功能分支**：codex/004-obstacles-breach-bushes
+**實作工作樹**：codex/004-obstacles-breach-bushes
+**本次交付分支**：codex/004-obstacles-breach-bushes（包含地圖配置更新與必要的 003 相容性修正）
 **日期**：2026-08-27
+**預定發布版本**：`v0.2.0`
 **規格**：[spec.md](spec.md)
 **輸入**：004 號功能規格、研究決策與既有 pvpve_escape 程式結構。
 
-> 依使用者先前要求保留目前工作，本次規劃與實作均不切換 `codex/003-combat-vfx-cone-ammo` 工作分支，也不覆蓋其未提交內容；功能目錄與 SDD 文件仍使用 004 號功能識別字。使用者現在已明確授權 PR、發布與合併，因此本次以現有分支作為整合交付分支，完成後回填外部 Git 結果。
+> 發布前保留工作樹中的既有使用者變更；本次建立符合 004 功能識別字的交付分支，並只納入已確認的程式、測試、SDD 與區域發布技能檔案，`day3/` 仍保留在工作樹且不納入提交。
 
 ## 摘要
 
-本功能會在現有 Pygame PvPvE 原型加入固定且經使用者確認的厚牆、薄牆與草叢配置。配置不要求幾何鏡像，正式座標以地圖配置編輯器送出的 JSON 為準；本次 18 個牆體與 16 個草叢的紅框重疊均保留，改以警示與路線驗收追蹤。牆體使用和地面不同的顏色，厚牆不可破壞，薄牆可由破陣者的主要/終極技能與 DASH 配件破壞；玩家與怪物不能穿牆，直線/光束/飛行技能在第一面牆前停止。破陣者的遠程破壞在移除薄牆後仍結束本次路徑，DASH 則破壞第一面薄牆並完成剩餘位移。
+本功能會在現有 Pygame PvPvE 原型加入固定且經使用者確認的厚牆、薄牆與草叢配置。配置不要求幾何鏡像，正式座標以地圖配置編輯器送出的 JSON 為準；本次 18 個牆體（12 個厚牆、6 個薄牆）與 27 個草叢的 5 筆紅框重疊均保留，改以警示與路線驗收追蹤。牆體使用和地面不同的顏色，厚牆不可破壞，薄牆可由破陣者終極技能與 DASH 配件破壞；破陣者主要技能與其他一般直線/飛行技能在第一面牆前停止。破陣者終極技能依範圍規則破壞薄牆/草叢，DASH 則破壞第一面薄牆並完成剩餘位移。
 
 技術上會在純 Python 模型增加軸對齊矩形與地形狀態，新增小型 terrain.py 共用圓形碰撞、線段掃掠、路徑端點、破壞與草叢判定。world.py 使用同一套地形結果處理玩家、怪物與技能；rules.py 增加受擊/攻擊雙計時器和最大生命值 10%/秒的恢復；rendering.py 依 viewer_id 控制草叢內玩家的顯示，讓自己看見自己、其他觀看者看不見角色資訊。所有資料仍只存在單局記憶體，不新增依賴或外部服務。
 
@@ -46,11 +47,11 @@
 | IV. 以資料、狀態與邊界描述互動行為 | 以 WorldRect、ObstacleState、BushState、TerrainHitResult、TerrainInteraction、前後位置和雙戰鬥計時器明確表示輸入/更新/碰撞/繪製邊界 | 通過 |
 | V. 每個功能都要被驗證 | 新增地形、恢復、可見性與渲染測試，並在 quickstart 提供牆角、牆後目標、破壞、多視角、5 秒門檻與重開手動驗證 | 通過 |
 | VI. SDD 文件語言一致性 | 本功能的 spec.md、plan.md、research.md、data-model.md、quickstart.md 與 tasks.md 均使用繁體中文；程式識別字和命令保留原始拼寫 | 通過 |
-| VII. 依 Spec Kit 管理分支與 PR 生命週期 | 功能目錄和文件使用 004-obstacles-breach-bushes；本次因跨功能變更已在現行 codex/003-combat-vfx-cone-ammo 整合，並由 T036 追蹤已授權的 PR、發布與合併結果 | 通過（整合例外與交付追蹤已記錄） |
+| VII. 依 Spec Kit 管理分支與 PR 生命週期 | 功能目錄、文件與本次交付分支使用 004-obstacles-breach-bushes；003 的散彈修正列為相容性補充，外部 PR／發布／合併由 T036 追蹤 | 本地符合；外部交付待完成 |
 
 ### 設計門檻結論
 
-設計門檻通過。為了不打斷當時進行中的工作，本次在現行 `codex/003-combat-vfx-cone-ammo` 工作樹完成實作；T002 已記錄分支例外與工作內容保留，T031～T035 已完成。現在已取得外部 Git 授權，T036 以此現行分支完成 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3)、合併與 [v0.1.0 發布標籤](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0)，不修改或重置其他未提交內容。
+設計門檻通過。T002 已確認既有工作內容保留，T031～T035 的本地驗證已完成；本次以 `codex/004-obstacles-breach-bushes` 作為交付分支，T036 將負責新的 PR、發布、合併與分支清理，不修改或重置 `day3/` 等未納入檔案。
 
 ## 專案結構
 
@@ -108,7 +109,7 @@
 在 config.py 增加：
 
 - OBSTACLE_LAYOUT：依使用者確認 JSON 寫入的 18 個固定牆型和矩形資料 tuple。
-- BUSH_LAYOUT：依使用者確認 JSON 寫入的 16 個固定草叢矩形資料 tuple。
+- BUSH_LAYOUT：依使用者確認 JSON 寫入的 27 個固定草叢矩形資料 tuple。
 - THICK_WALL_COLOR=(115, 93, 105)。
 - THIN_WALL_COLOR=(212, 143, 62)。
 - WALL_BORDER_COLOR=(235, 240, 242)。
@@ -117,7 +118,7 @@
 - PLAYER_REGEN_DELAY=5.0、PLAYER_REGEN_RATE=0.10。
 - TERRAIN_GEOMETRY_EPSILON、TERRAIN_SPAWN_SAFE_RADIUS=72.0、TERRAIN_CAMP_SAFE_RADIUS=94.0 與 TERRAIN_EXTRACTION_SAFE_PADDING=20.0。
 
-固定配置不要求世界中心鏡像；terrain.py 建立每場的獨立 dataclass 物件。建立測試確認 34 個矩形完全落在世界內、牆型與草叢數量符合已確認配置，並將編輯器紅框重疊列為已核准的警示清單，而非建立失敗條件。重開由 main.py 既有的 create_match 路徑自動取得全新物件，不增加全域可變地圖。
+固定配置不要求世界中心鏡像；terrain.py 建立每場的獨立 dataclass 物件。建立測試確認 45 個矩形完全落在世界內、牆型與草叢數量符合已確認配置，並將編輯器 5 筆紅框重疊列為已核准的警示清單，而非建立失敗條件。重開由 main.py 既有的 create_match 路徑自動取得全新物件，不增加全域可變地圖。
 
 ### 2. terrain.py 的共用幾何介面
 
@@ -164,13 +165,13 @@ _targets_in_segment、_targets_in_line 和立即結算的 sniper ultimate 需使
 
 | 動作 | terrain_interaction | 行為 |
 |---|---|---|
-| 破陣者 breach_cone | BREAK_THIN_ON_PATH | 薄牆可破壞，遠程本次 effect 在牆前結束 |
+| 破陣者 breach_cone | BLOCK | 薄牆/厚牆均阻擋；五顆散彈停在牆前，不破壞牆或草叢 |
 | 破陣者 breach_burst | BREAK_THIN_IN_AREA | 爆發範圍內薄牆/草叢移除，厚牆保留 |
 | DASH tactical_dash | DASH_BREAK_FIRST_THIN | 第一面薄牆移除後繼續剩餘位移 |
 | 其他主要/終極/配件 | BLOCK | 牆前停止，不破壞 |
 | hunter_dash | BLOCK | 牆前停止，不破壞 |
 
-破陣者 breach_cone 建立 effect 時先複製所有尚未破壞牆的 obstacle_id、kind、bounds 到 terrain blocker snapshot。第一次地形處理依扇形/路徑找到符合的薄牆並設 destroyed=True；後續目標檢查仍使用 snapshot，所以本次施放不能因薄牆已消失而穿過缺口。五個 breach_pellet 僅負責視覺呈現，不直接改動地形或生命。
+破陣者 breach_cone 與五個 breach_pellet 都使用 `BLOCK`；建立效果時依第一面牆截斷共同施放距離，五顆散彈各自沿對應路徑在牆前停止，不建立破牆快照、不改動牆或草叢，牆後目標也不會受到本次普攻影響。breach_burst 仍以 `BREAK_THIN_IN_AREA` 執行範圍破壞，DASH 則依 `DASH_BREAK_FIRST_THIN` 處理第一面薄牆。
 
 breach_burst 在既有圓形目標結算前，呼叫範圍破壞輔助函式；厚牆不會變更。DASH 則循環解析剩餘線段：無牆時走完、厚牆時停在牆前、第一面薄牆時移除並扣除到牆前的距離後繼續。DASH 路徑上的所有草叢可被移除但不阻擋；下一面仍存在的牆仍會停止衝刺。
 
@@ -202,7 +203,7 @@ aiming.py 的 build_aim_guide 增加可選 obstacles 參數，預設空集合以
 
 rendering.py 增加：
 
-- draw_terrain：唯一負責牆和草叢幾何繪製的共用層，直接使用 config.py 的 18 個牆體與 16 個草叢矩形，確保每個已確認物件都會被正式遊戲畫面繪出；以 match.camera.position 做世界座標平移，依 `surface.get_rect()` 跳過完全在視窗外的物件並裁切跨越邊界的矩形，攝影機進入範圍即可看見物件。
+- draw_terrain：唯一負責牆和草叢幾何繪製的共用層，直接使用 config.py 的 18 個牆體與 27 個草叢矩形，確保每個已確認物件都會被正式遊戲畫面繪出；以 match.camera.position 做世界座標平移，依 `surface.get_rect()` 跳過完全在視窗外的物件並裁切跨越邊界的矩形，攝影機進入範圍即可看見物件。
 - 地形層的實際順序為地面/網格 → 草叢 → 厚牆/薄牆 → 怪物/效果/角色 → HUD；草叢使用綠色幾何填充與葉片筆觸，厚牆使用深紫灰色加亮邊框，薄牆使用橘色加亮邊框與裂紋。牆放在草叢之後，避免重疊時牆的辨識被覆蓋；觀看者可見性不得在此重複繪製草叢。
 - draw_world(..., viewer_id=0) 和 draw_match(..., viewer_id=0)：維持舊有位置參數，新增尾端預設。
 - _draw_player_roster(..., viewer_id=0)：對非自身觀看者跳過草叢內玩家的玩家名單角色、編號與狀態。
@@ -215,17 +216,17 @@ rendering.py 增加：
 
 | 測試位置 | 新增/修改內容 |
 |---|---|
-| tests/test_config.py | 已確認的 18 個牆體、16 個草叢、世界邊界、顏色/恢復常數與 9 筆紅框安全區警示 |
+| tests/test_config.py | 已確認的 18 個牆體、27 個草叢、世界邊界、顏色/恢復常數與 5 筆紅框安全區警示 |
 | tests/test_terrain.py | WorldRect 邊界、固定配置警示清單、玩家與怪物正面/斜向滑動、線段第一面牆、投射物半徑、薄/厚牆政策、DASH 多牆、草叢非阻擋與破壞、同場持續/新場重置 |
 | tests/test_regeneration.py | 4.9 秒不回血、5.0 秒開始、1 秒 10%、最大值截斷、受擊/護盾/攻擊重置、普通 DASH/SHIELD 不重置、死亡/重生 |
 | tests/test_visibility.py | 自己在草叢可見、他人視角隱藏角色資訊、離開/破壞後恢復、隱藏不改變目標/傷害結果 |
 | tests/test_aiming.py | 線段/路徑端點受牆截斷，DASH 預覽與解析端點一致，舊版空 obstacles 仍維持原結果 |
-| tests/test_rendering.py | 確認完整世界畫布上的 18 個牆體與 16 個草叢都有填色，並在實際 1280×720 視窗的不同相機位置確認牆/草叢可見；地形層先於角色/效果、viewer_id 下角色/玩家名單隱藏與自身顯示、既有技能效果仍可繪製 |
-| tests/test_rules.py | create_match 地形欄位、技能整合的牆後不命中、破陣者/DASH 破壞資格、既有死亡/撤離回歸 |
+| tests/test_rendering.py | 確認完整世界畫布上的 18 個牆體與 27 個草叢都有填色，並在實際 1280×720 視窗的不同相機位置確認牆/草叢可見；地形層先於角色/效果、viewer_id 下角色/玩家名單隱藏與自身顯示、既有技能效果仍可繪製 |
+| tests/test_rules.py | create_match 地形欄位、技能整合的牆後不命中、破陣者終極/DASH 破壞資格與主要技能阻擋、既有死亡/撤離回歸 |
 
 所有對應 SC-001～SC-011 的新測試使用固定座標與固定 delta_time，實際情境至少重複 20 次；SC-009 另外檢查 4.9/5.0 秒門檻、完整 1 秒恢復量與既有數值精度容許範圍。純輔助函式測試不啟動視窗，渲染測試沿用 test_helpers.py 的 dummy video driver。保留既有函式的可選參數預設，避免現有測試因 API 擴充失效。
 
-初始工作樹基線曾受未提交的 GUI、自動瞄準、投射物與戰鬥變更影響；本輪依使用者要求保留 `codex/003-combat-vfx-cone-ammo` 未提交內容，並讓地形無關的既有技能 fixture 使用空障礙物清單以維持測試責任邊界。完成整合後，完整套件實際為 159/159 通過；沒有以回復或重置使用者變更的方式消除基線差異。
+初始工作樹基線曾受未提交的 GUI、自動瞄準、投射物與戰鬥變更影響；本輪保留既有使用者內容，並讓地形無關的既有技能 fixture 使用空障礙物清單以維持測試責任邊界。完成整合後，完整套件實際為 162/162 通過；沒有以回復或重置使用者變更的方式消除基線差異。
 
 ## 實作階段與每階段檢查點
 
@@ -281,16 +282,16 @@ rendering.py 增加：
     git diff --check
     .\.venv\Scripts\python.exe -m pvpve_escape
 
-自動化驗證與入口煙霧驗收已完成；互動視覺情境列於 quickstart.md 供使用者開啟遊戲確認。T036 的功能分支推送、[PR #3](https://github.com/KGeneral7/pythonSDD/pull/3)、合併與 [v0.1.0 發布標籤](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0) 已納入本次外部 Git 交付結果。
+自動化驗證與入口煙霧驗收已完成；互動視覺情境列於 quickstart.md 供使用者開啟遊戲確認。原始 PR #3／`v0.1.0` 是既有功能基線，本次外部 Git 交付由 T036 以 004 交付分支重新建立。
 
 ## 風險與處理方式
 
 - 牆體增加後，既有測試若使用固定座標剛好穿過新牆，優先調整測試夾具到明確的牆前/牆後位置，不放寬碰撞規則。
-- 薄牆在遠程 action 中即時消失可能造成穿透，使用 effect 的 terrain blocker snapshot 解決；snapshot 只讀，不取代 MatchState 的實際 destroyed 狀態。
+- 明確具備遠程破牆資格的 action 若在施放時移除薄牆，使用 effect 的 terrain blocker snapshot 避免同次穿透；破陣者主要技能使用 `BLOCK`，不進入此流程。
 - Pygame 渲染若只跳過角色、不跳過玩家名單，仍會洩漏草叢玩家資訊；玩家本體與玩家名單必須共用可見性判定函式。
 - 怪物沒有尋路時可能在牆前停住；這符合本規格的停止/滑動要求，不在本功能加入大範圍路徑尋找。
 - 預覽與實際路徑若使用不同半徑或端點，會出現畫面誤導；兩者共用 terrain.py，且保留沒有 obstacles 參數時的舊行為。
-- 完整測試目前為 159/159 通過；若後續其他工作樹再次出現 GUI 或既有功能基線差異，應獨立記錄，不覆蓋未提交 `config.py`。
+- 完整測試目前為 162/162 通過；若後續其他工作樹再次出現 GUI 或既有功能基線差異，應獨立記錄，不覆蓋未提交 `config.py`。
 
 ## 第一階段產物
 

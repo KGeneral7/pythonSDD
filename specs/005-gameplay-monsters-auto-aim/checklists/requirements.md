@@ -29,4 +29,4 @@
 
 ## 備註
 
-- 本規格與程式變更已在目前工作樹驗證；本次與 003、004 共用跨檔案變更，沿用 `codex/003-combat-vfx-cone-ammo` 作為交付分支，並由 PR 文件記錄整合範圍。
+- 本規格與程式變更已在原始工作樹驗證；本次與 003、004 共用的跨檔案變更已由 `codex/003-combat-vfx-cone-ammo`、[PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 與 `v0.1.0` 完成，後續 004 地圖更新另由 `codex/004-obstacles-breach-bushes` 交付。

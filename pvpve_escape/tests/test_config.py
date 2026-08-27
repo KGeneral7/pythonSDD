@@ -12,22 +12,22 @@ from pvpve_escape import config
 EXPECTED_OBSTACLE_LAYOUT = (
     ("thick_wall", 900, 500, 100, 160),
     ("thick_wall", 900, 400, 260, 100),
-    ("thick_wall", 1400, 760, 100, 160),
-    ("thick_wall", 1220, 920, 280, 100),
-    ("thin_wall", 680, 400, 80, 220),
-    ("thin_wall", 660, 820, 100, 220),
-    ("thin_wall", 1640, 420, 80, 240),
-    ("thin_wall", 1640, 800, 80, 220),
-    ("thin_wall", 1240, 340, 220, 60),
-    ("thin_wall", 1140, 1020, 80, 80),
-    ("thin_wall", 1680, 0, 80, 100),
-    ("thin_wall", 2020, 1100, 80, 300),
-    ("thin_wall", 2260, 920, 140, 40),
-    ("thin_wall", 2020, 0, 80, 340),
-    ("thin_wall", 2300, 320, 80, 40),
-    ("thin_wall", 540, 140, 400, 80),
-    ("thin_wall", 540, 1180, 320, 60),
-    ("thin_wall", 300, 400, 80, 220),
+    ("thick_wall", 1400, 720, 100, 280),
+    ("thick_wall", 1240, 900, 180, 100),
+    ("thick_wall", 700, 700, 100, 300),
+    ("thick_wall", 1600, 400, 100, 300),
+    ("thick_wall", 1200, 200, 400, 100),
+    ("thick_wall", 800, 1100, 400, 100),
+    ("thick_wall", 1600, 900, 100, 300),
+    ("thick_wall", 1300, 1100, 300, 100),
+    ("thick_wall", 700, 200, 100, 300),
+    ("thick_wall", 800, 200, 300, 100),
+    ("thin_wall", 1700, 600, 300, 100),
+    ("thin_wall", 400, 700, 300, 100),
+    ("thin_wall", 2000, 600, 100, 400),
+    ("thin_wall", 300, 400, 100, 400),
+    ("thin_wall", 2000, 200, 100, 400),
+    ("thin_wall", 300, 800, 100, 400),
 )
 
 EXPECTED_BUSH_LAYOUT = (
@@ -35,18 +35,29 @@ EXPECTED_BUSH_LAYOUT = (
     (1000, 820, 400, 80),
     (1000, 500, 100, 400),
     (1300, 500, 100, 400),
-    (1480, 200, 220, 120),
-    (1720, 640, 500, 180),
-    (140, 620, 620, 200),
-    (840, 1100, 300, 100),
-    (1540, 1140, 340, 120),
-    (800, 220, 340, 120),
-    (240, 1040, 360, 160),
-    (1900, 320, 400, 140),
-    (2040, 960, 220, 140),
-    (20, 140, 260, 80),
-    (820, 740, 100, 240),
-    (1480, 500, 100, 180),
+    (1100, 580, 200, 240),
+    (800, 300, 100, 100),
+    (1500, 1000, 100, 100),
+    (1500, 300, 100, 100),
+    (800, 1000, 100, 100),
+    (1600, 200, 100, 200),
+    (700, 1000, 100, 200),
+    (1500, 700, 200, 200),
+    (700, 500, 200, 200),
+    (1100, 200, 100, 100),
+    (1200, 1100, 100, 100),
+    (0, 400, 300, 200),
+    (0, 600, 300, 200),
+    (0, 800, 300, 200),
+    (2100, 800, 300, 200),
+    (2100, 600, 300, 200),
+    (2100, 400, 300, 200),
+    (2100, 300, 300, 100),
+    (0, 1000, 300, 100),
+    (1500, 0, 200, 200),
+    (700, 0, 200, 200),
+    (700, 1200, 200, 200),
+    (1500, 1200, 200, 200),
 )
 
 
@@ -73,14 +84,14 @@ class ConfigValueTests(unittest.TestCase):
         self.assertEqual(config.OBSTACLE_LAYOUT, EXPECTED_OBSTACLE_LAYOUT)
         self.assertEqual(config.BUSH_LAYOUT, EXPECTED_BUSH_LAYOUT)
         self.assertEqual(len(config.OBSTACLE_LAYOUT), 18)
-        self.assertEqual(len(config.BUSH_LAYOUT), 16)
+        self.assertEqual(len(config.BUSH_LAYOUT), 27)
         self.assertEqual(
             sum(kind == "thick_wall" for kind, *_ in config.OBSTACLE_LAYOUT),
-            4,
+            12,
         )
         self.assertEqual(
             sum(kind == "thin_wall" for kind, *_ in config.OBSTACLE_LAYOUT),
-            14,
+            6,
         )
 
     def test_saved_editor_snapshot_matches_formal_layout_constants(self) -> None:
@@ -193,11 +204,7 @@ class ConfigValueTests(unittest.TestCase):
             ("bush", 1000, 820, 400, 80, "中央撤離區"),
             ("bush", 1000, 500, 100, 400, "中央撤離區"),
             ("bush", 1300, 500, 100, 400, "中央撤離區"),
-            ("bush", 1540, 1140, 340, 120, "怪物區 4"),
-            ("bush", 240, 1040, 360, 160, "出生點 4"),
-            ("bush", 240, 1040, 360, 160, "怪物區 3"),
-            ("bush", 1900, 320, 400, 140, "怪物區 2"),
-            ("thin_wall", 540, 140, 400, 80, "出生點 1"),
+            ("bush", 1100, 580, 200, 240, "中央撤離區"),
         }
         self.assertEqual(retained, expected)
 

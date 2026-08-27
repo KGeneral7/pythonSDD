@@ -217,9 +217,9 @@ def create_primary_action(
                 "pellets": int(definition.parameters.get("pellets", config.BREACH_PELLET_COUNT)),
                 "angle": definition.parameters.get("angle", config.BREACH_CONE_ANGLE_DEGREES),
                 "visual": "cone_and_pellet_trails",
-                "impact": "authoritative_cone_sweep",
+                "impact": "independent_pellets",
             },
-            terrain_interaction=TerrainInteraction.BREAK_THIN_ON_PATH,
+            terrain_interaction=TerrainInteraction.BLOCK,
         )
     if player.character_id == CharacterId.SNIPER:
         return CombatAction(

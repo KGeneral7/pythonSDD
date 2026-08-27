@@ -4,7 +4,7 @@
 
 **預定功能分支**：`codex/005-gameplay-monsters-auto-aim`
 
-**目前與本次交付分支**：`codex/003-combat-vfx-cone-ammo`。本功能與 003、004 共用 `world.py`、`rendering.py` 與測試整合，沿用目前已驗證的工作分支交付；分支保留原因已不再是權限限制。
+**原始交付分支**：`codex/003-combat-vfx-cone-ammo`。本功能與 003、004 共用 `world.py`、`rendering.py` 與測試整合，已隨 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 與 `v0.1.0` 完成；目前的 004 地圖更新由 `codex/004-obstacles-breach-bushes` 另行交付。
 
 ## 技術決策
 
@@ -31,4 +31,4 @@
 3. 設定目標在兩個不同時間點的位置，確認自瞄方向指向 `AUTO_AIM_LOOKBACK_SECONDS` 秒前的位置；修改設定後測試新值生效，並確認牆後目標不會被選取。
 4. 發射後移動目標，確認投射物維持原方向且不會在施放瞬間直接扣血；按 Tab 關閉後只使用手動方向。
 5. 讓砲台蟲發射子彈，移動玩家離開路徑，確認子彈可被閃避。
-6. 執行 `python -m unittest pvpve_escape.tests.test_game_features`、完整 `pvpve_escape/tests` 回歸、`python -m compileall -q pvpve_escape` 與 `git diff --check`；目前完整套件為 159/159 通過。
+6. 執行 `python -m unittest pvpve_escape.tests.test_game_features`、完整 `pvpve_escape/tests` 回歸、`python -m compileall -q pvpve_escape` 與 `git diff --check`；目前完整套件為 162/162 通過。

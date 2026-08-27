@@ -15,7 +15,7 @@
 | 牆如何阻擋高速技能 | 目前飛行物保存前後位置，可用同一幀線段掃掠 | 新增第一個地形命中與路徑端點輔助函式，所有飛行物先截斷再做目標命中 |
 | 破牆遠程技能如何避免同次穿透 | 薄牆會在動作中消失，直接重新查詢狀態可能讓同一技能穿過 | 施放時保存本次技能的地形阻擋快照；先破壞薄牆，再用快照阻擋同次傷害 |
 | 牆角碰撞需要多複雜的物理系統 | 地圖是固定矩形，角色與怪物為圓形，且只要求停止或滑動 | 使用軸向分離的移動修正；先處理 X 再處理 Y，無碰撞軸可沿牆滑動 |
-| 哪些能力算破牆 | 規格已限定破陣者主要/終極技能與 DASH | 以 action kind 與配件/角色資格判定，不以傷害數值或任意 metadata 放寬 |
+| 哪些能力算破牆 | 規格已限定破陣者終極技能與 DASH；破陣者主要技能不具破牆資格 | 以 action kind 與配件/角色資格判定，不以傷害數值或任意 metadata 放寬 |
 | 恢復計時如何和目前 last_damage_time 配合 | last_damage_time 實際保存的是「距離上次受擊的經過秒數」 | 保留既有欄位語意，新增 last_attack_time 同樣保存經過秒數 |
 | 草叢隱藏是否應改變戰鬥規則 | 使用者指定自己可見、他人不可見，規格明確要求只改變顯示 | 在渲染層依 viewer_id 隱藏角色資訊；目標選取、碰撞與傷害仍走既有世界規則 |
 | 是否需要外部介面契約 | 專案只有本地 Pygame 入口，沒有公開 API、CLI 協定或跨系統服務 | 不建立 contracts/；以資料模型與 quickstart 描述內部可觀察介面 |
@@ -58,7 +58,7 @@ MatchState 直接增加 obstacles: list[ObstacleState] 與 bushes: list[BushStat
 
 移動使用 move_circle_with_obstacles 的軸向分離修正：先嘗試 X 位移並在碰撞時貼到膨脹矩形邊界，再嘗試 Y 位移。這提供可理解的停止/滑動行為，也保留現有世界矩形邊界 clamp_position。
 
-路徑型效果使用 resolve_path_endpoint 與 first_obstacle_on_segment。至少套用到 sniper_line、sniper_ultimate_line、boomerang、mine、beam、hunter_dash、tactical_dash、tactical_control、gravity_cage 的直線或飛行段，以及破陣者的破壞路徑。圓形爆發與護盾等不沿路徑飛行的效果維持原有範圍規則；破陣者爆發另依規格移除其範圍內的薄牆和草叢。
+路徑型效果使用 resolve_path_endpoint 與 first_obstacle_on_segment。至少套用到 sniper_line、sniper_ultimate_line、boomerang、mine、beam、hunter_dash、tactical_dash、tactical_control、gravity_cage 的直線或飛行段，以及破陣者主要技能的牆前阻擋。圓形爆發與護盾等不沿路徑飛行的效果維持原有範圍規則；破陣者終極技能另依規格移除其範圍內的薄牆和草叢。
 
 **理由**：這套幾何足以涵蓋目前固定矩形地圖，並能在 unittest 中用固定座標驗證；不需要連續物理模擬或可變幀率碰撞。
 
@@ -74,15 +74,15 @@ MatchState 直接增加 obstacles: list[ObstacleState] 與 bushes: list[BushStat
 
 | 動作 | 可破壞 | 撞到牆的結果 |
 |---|---|---|
-| 破陣者 breach_cone | 薄牆、草叢 | 每條有效破壞路徑在第一個牆體處結束；薄牆移除，但本次 effect 使用牆體快照，不得穿過缺口命中牆後 |
+| 破陣者 breach_cone | 不可破壞 | 使用 BLOCK 在第一面牆前停止；薄牆保留，草叢不受影響 |
 | 破陣者 breach_burst | 範圍內薄牆、草叢 | 厚牆不變；爆發本身仍依原有圓形範圍處理戰鬥目標 |
 | TacticalId.DASH 的 tactical_dash | 衝刺路徑第一面薄牆、草叢 | 薄牆移除後完成剩餘距離；下一面仍存在的牆或厚牆使衝刺停在牆前 |
 | 其他角色主要/終極技能 | 無 | 直線/飛行段在第一面牆前停止 |
 | 其他配件與 hunter_dash | 無 | 依一般移動/飛行碰撞在牆前停止 |
 
-破陣者遠程 effect 在第一次更新前先建立不可變的地形阻擋快照，再移除符合資格的薄牆；目標命中使用快照而非已變更的 destroyed 狀態。DASH 使用可重複查詢的路徑解析：移除第一面薄牆後只消耗到牆前的距離，從牆前繼續檢查剩餘距離，讓後續牆仍能阻擋。草叢永遠不阻擋，只在破壞能力的路徑/範圍內移除。
+破陣者 breach_cone 與五個 breach_pellet 使用 BLOCK，在第一面牆前停止，不建立破牆快照，也不移除薄牆或草叢；牆後目標不受同次普攻影響。破陣者 breach_burst 仍在範圍內移除薄牆與草叢；DASH 使用可重複查詢的路徑解析，移除第一面薄牆後只消耗到牆前的距離，從牆前繼續檢查剩餘距離，讓後續牆仍能阻擋。草叢永遠不阻擋，只在破壞能力的路徑/範圍內移除。
 
-**理由**：這能同時滿足「遠程停、衝刺穿」與「草叢也會被破壞」，並避免薄牆在同一施放中消失後被錯誤當成可穿透缺口。
+**理由**：這能同時滿足「普攻/一般遠程停止、終極範圍破壞、衝刺穿一面薄牆」與「草叢也會被破壞」，並避免普攻錯誤取得破牆資格。
 
 **替代方案**：
 
@@ -128,9 +128,9 @@ update_player_timers 每幀增加兩個計時器；handle_player_death、respawn
 
 ## 決策 7：固定已確認配置與無素材繪製
 
-**選擇**：在 config.py 保存地圖配置編輯器送出的固定座標，包含 18 個牆體與 16 個草叢；不要求世界中心鏡像，建立函式回傳每場獨立複本。出生點、怪物營地與中央撤離區安全判定區的矩形交集只產生可追蹤警示，不自動拒絕配置；本次編輯器標示的 9 筆重疊均已由使用者確認保留，並以手動路線與世界邊界測試驗證。
+**選擇**：在 config.py 保存地圖配置編輯器送出的固定座標，包含 18 個牆體（12 個厚牆、6 個薄牆）與 27 個草叢；不要求世界中心鏡像，建立函式回傳每場獨立複本。出生點、怪物營地與中央撤離區安全判定區的矩形交集只產生可追蹤警示，不自動拒絕配置；本次編輯器標示的 5 筆重疊均已由使用者確認保留，並以手動路線與世界邊界測試驗證。
 
-視覺使用既有幾何繪圖：厚牆採深紫灰色、薄牆採橘色、兩者共用淺色邊框；薄牆再加裂紋/斷線，草叢採綠色填充與葉片筆觸。正式的 `draw_match` 會經 `draw_world` 呼叫 `rendering.draw_terrain`，逐一繪出固定配置的 18 個牆體與 16 個草叢；每個世界矩形先依相機平移，再依目前 Pygame surface 裁切，繪製順序為地面/網格 → 草叢 → 牆 → 怪物/效果 → 可見玩家 → HUD。牆放在草叢之後，確保重疊時仍可辨識，且自己在草叢內仍位於地形前景之上。
+視覺使用既有幾何繪圖：厚牆採深紫灰色、薄牆採橘色、兩者共用淺色邊框；薄牆再加裂紋/斷線，草叢採綠色填充與葉片筆觸。正式的 `draw_match` 會經 `draw_world` 呼叫 `rendering.draw_terrain`，逐一繪出固定配置的 18 個牆體與 27 個草叢；每個世界矩形先依相機平移，再依目前 Pygame surface 裁切，繪製順序為地面/網格 → 草叢 → 牆 → 怪物/效果 → 可見玩家 → HUD。牆放在草叢之後，確保重疊時仍可辨識，且自己在草叢內仍位於地形前景之上。
 
 **理由**：固定且由使用者確認的座標能讓路線、碰撞和手動驗證可重現，同時保留編輯器對戰術性安全區重疊的提醒；不新增圖片素材，減少載入與透明通道風險。顏色和樣式集中在設定，後續調整不必搜尋多個繪製分支。
 
@@ -142,9 +142,9 @@ update_player_timers 每幀增加兩個計時器；handle_player_death、respawn
 
 ## 決策 8：沿用 unittest 與無頭 Pygame 驗證
 
-**選擇**：新增地形、恢復與可見性專用測試檔，並在既有 test_aiming.py、test_rendering.py、test_rules.py 補上相容性測試。純幾何與恢復用固定數值直接測試；世界整合用 create_match、update_world 和固定 delta_time；渲染用既有 SDL_VIDEODRIVER=dummy 與 pygame.Surface 冒煙測試，逐一檢查完整世界畫布上的 34 個配置矩形，再以正式 1280×720 surface 搭配不同相機位置確認畫面可見。完成後執行 unittest、compileall、git diff --check 與 quickstart 手動驗收。
+**選擇**：新增地形、恢復與可見性專用測試檔，並在既有 test_aiming.py、test_rendering.py、test_rules.py 補上相容性測試。純幾何與恢復用固定數值直接測試；世界整合用 create_match、update_world 和固定 delta_time；渲染用既有 SDL_VIDEODRIVER=dummy 與 pygame.Surface 冒煙測試，逐一檢查完整世界畫布上的 45 個配置矩形，再以正式 1280×720 surface 搭配不同相機位置確認畫面可見。完成後執行 unittest、compileall、git diff --check 與 quickstart 手動驗收。
 
-初始工作樹基線曾受未提交的 GUI、自動瞄準、投射物與戰鬥變更影響；本輪依使用者要求保留 `codex/003-combat-vfx-cone-ammo` 工作狀態，並讓地形無關的既有技能 fixture 使用空障礙物清單以維持測試責任邊界。完成整合後，完整套件實際為 159/159 通過；沒有回復或覆蓋使用者未提交內容。
+初始工作樹基線曾受未提交的 GUI、自動瞄準、投射物與戰鬥變更影響；本輪保留既有使用者工作內容，並讓地形無關的既有技能 fixture 使用空障礙物清單以維持測試責任邊界。完成整合後，完整套件實際為 162/162 通過；沒有回復或覆蓋使用者未提交內容。
 
 **理由**：現有測試已經提供固定步驟、無頭畫面與角色/效果夾具，新增功能可直接沿用；不需要安裝新套件或改變啟動方式。
 
@@ -160,5 +160,6 @@ update_player_timers 每幀增加兩個計時器；handle_player_death、respawn
 ## 實作核對結果
 
 - 使用者確認的 2400×1400 地圖快照已保存為 `map-layout-draft.json`，正式 `config.py` 與快照由測試逐項比對。
-- `terrain.py`、正式 `draw_match` 地形層、牆後路徑阻擋、Breacher/DASH 破壞、草叢觀看者隱藏與雙計時器恢復均已接入 `update_world`，完整測試 159/159 通過。
-- 入口煙霧與固定場景效能驗證已完成；已完成外部分支推送與 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3)，本次流程完成合併並建立 [v0.1.0 發布標籤](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0)。
+- `terrain.py`、正式 `draw_match` 地形層、牆後路徑阻擋、Breacher 終極技能/DASH 破壞、草叢觀看者隱藏與雙計時器恢復均已接入 `update_world`，完整測試 162/162 通過。
+- 地圖更新後以 45 個固定地形物件完成正式更新/繪製效能回歸：預熱 60 幀後量測 600 幀，3.4837 秒、172.23 FPS，高於 55 FPS 門檻。
+- 入口煙霧與固定場景效能驗證已完成；原始外部交付由 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 與 `v0.1.0` 建立，本次地圖更新預定以 `v0.2.0` 發布，外部分支、PR、發布與合併待 T036 完成。

@@ -120,9 +120,9 @@ class TerrainGeometryTests(unittest.TestCase):
         self.assertFalse(second_obstacles[0].destroyed)
         self.assertTrue(second_bushes[0].active)
         self.assertEqual(len(first_obstacles), 18)
-        self.assertEqual(len(first_bushes), 16)
-        self.assertEqual(sum(item.kind == ObstacleKind.THICK_WALL for item in first_obstacles), 4)
-        self.assertEqual(sum(item.kind == ObstacleKind.THIN_WALL for item in first_obstacles), 14)
+        self.assertEqual(len(first_bushes), 27)
+        self.assertEqual(sum(item.kind == ObstacleKind.THICK_WALL for item in first_obstacles), 12)
+        self.assertEqual(sum(item.kind == ObstacleKind.THIN_WALL for item in first_obstacles), 6)
 
     def test_snapshot_keeps_obstacle_identity_kind_and_bounds(self) -> None:
         obstacles, _ = build_terrain()
@@ -139,7 +139,7 @@ class TerrainGeometryTests(unittest.TestCase):
         second = create_match()
 
         self.assertEqual(len(first.obstacles), 18)
-        self.assertEqual(len(first.bushes), 16)
+        self.assertEqual(len(first.bushes), 27)
         self.assertEqual(
             [(item.kind, item.bounds) for item in first.obstacles],
             [(item.kind, item.bounds) for item in second.obstacles],
@@ -260,7 +260,7 @@ class TerrainGeometryTests(unittest.TestCase):
         )
         self.assertEqual(boomerang.impact_status, "牆")
 
-    def test_breacher_primary_breaks_one_thin_wall_and_keeps_the_cast_on_that_wall(self) -> None:
+    def test_breacher_primary_blocks_thin_wall_without_breaking_it(self) -> None:
         for _ in range(20):
             match = create_match(CharacterId.BREACHER)
             match.monsters = []
@@ -277,10 +277,11 @@ class TerrainGeometryTests(unittest.TestCase):
 
             action = create_primary_action(owner, Vector2(1, 0))
             self.assertIsNotNone(action)
+            self.assertEqual(action.terrain_interaction, TerrainInteraction.BLOCK)
             _apply_action(match, action)
             health_before = target.health
-            self.assertTrue(wall.destroyed)
-            self.assertFalse(match.bushes[0].active)
+            self.assertFalse(wall.destroyed)
+            self.assertTrue(match.bushes[0].active)
             for _ in range(20):
                 update_world(match, {0: InputState()}, 0.05)
             self.assertEqual(target.health, health_before)
