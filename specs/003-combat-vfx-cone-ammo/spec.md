@@ -6,7 +6,7 @@
 
 **建立日期**：2026-08-27
 
-**狀態**：原始功能已由 PR #3／`v0.1.0` 完成；本次五散彈規則修正隨 Feature 004 的新 PR 交付
+**狀態**：原始功能已由 PR #3／`v0.1.0` 完成；本次五散彈規則修正已隨 Feature 004 的 [PR #4](https://github.com/KGeneral7/pythonSDD/pull/4) 合併，並包含於 [v0.2.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0)
 **本次整合交付分支**：`codex/004-obstacles-breach-bushes`
 
 **輸入**：使用者需求：整合既有 6 人 PvPvE 中央撤離遊戲、瞄準線與角色平衡方案，將 GUI 面板改為可調整的半透明樣式，為六種角色的普攻與大招及三種戰術配件加入明顯且可辨識的特效，讓破陣者以五顆獨立散射彈在 60°、200 距離內分別判定命中，並在角色攻擊期間暫停彈藥自動恢復。
