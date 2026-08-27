@@ -15,6 +15,8 @@ from pvpve_escape.world import _apply_action, create_match, update_world
 def _prepare_target(angle_degrees: float, distance: float):
     match = create_match(CharacterId.BREACHER)
     match.monsters = []
+    # 這個檔案只驗證扇形命中幾何；地形阻擋由 feature 004 的整合測試專責覆蓋。
+    match.obstacles = []
     owner = match.players[0]
     target = match.players[1]
     for other in match.players[2:]:
@@ -82,7 +84,8 @@ class BreachConeRuleTests(unittest.TestCase):
         for _ in range(2):
             update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
         self.assertEqual(target.health, before)
-        update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
+        for _ in range(3):
+            update_world(match, {0: InputState(aim_direction=Vector2(1, 0))}, 0.05)
         self.assertLess(target.health, before)
 
     def test_cone_origin_is_fixed_even_when_owner_moves_after_cast(self) -> None:

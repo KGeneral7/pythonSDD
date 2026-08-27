@@ -130,7 +130,7 @@
 - [X] T035 在 T036 完成後，於 `pvpve_escape/tests/test_rules.py` 補上並執行破陣者、狙擊者、追獵者與控場者各至少 20 次固定方向飛行測試，觀察至少 10 個更新間隔或抵達最大距離前的路徑，量測速度誤差不超過 ±5%；再執行 `pvpve_escape/tests/` 全套測試、`pvpve_escape/` 編譯檢查與 `git diff --check`，確認既有移動邊界、狙擊連續碰撞、怪物強化、死亡／重生、中央撤離與無人勝利規則仍通過（依賴 T036）。
 - [X] T036 在 T013、T020、T028、T033 完成後，於 `pvpve_escape/world.py` 與 `pvpve_escape/rendering.py` 檢查效果過期清理、視覺-only 軌跡數量、同幀命中事件數與 60 FPS 下的幾何繪製成本，移除不必要的重複遍歷但不改變已驗證的結果。
 - [X] T037 在 `.specify/feature.json`、`specs/003-combat-vfx-cone-ammo/spec.md`、`specs/003-combat-vfx-cone-ammo/plan.md`、`specs/003-combat-vfx-cone-ammo/tasks.md` 與 Git 分支確認功能識別字一致，並記錄任何分支命名或既有工作區修改衝突後再進入發布流程。
-- [ ] T038 在 `specs/003-combat-vfx-cone-ammo/` 的規格文件與 `specs/003-combat-vfx-cone-ammo/quickstart.md` 驗證結果基礎上，依專案憲章推送功能分支、建立 PR，於 PR 說明中連結規格並記錄自動化／手動驗證結果。
+- [ ] T038 依 `specs/003-combat-vfx-cone-ammo/` 的規格文件與 `quickstart.md` 驗證結果，於本次整合交付中推送 `codex/003-combat-vfx-cone-ammo`、建立 PR、完成發布與合併，並在 PR 說明中連結 003、004、005 規格及記錄自動化／手動驗證結果。
 
 ---
 

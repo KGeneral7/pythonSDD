@@ -6,7 +6,7 @@
 ## 分支與工作區保護
 
 - `.specify/feature.json`、`spec.md`、`plan.md`、`tasks.md` 與目前 Git 分支均使用 `003-combat-vfx-cone-ammo` 識別字，分支為 `codex/003-combat-vfx-cone-ammo`。
-- 實作前已存在的 `.specify/memory/constitution.md` 與 `day3/` 工作區修改屬於既有使用者內容；本功能不覆蓋、不納入暫存，也不與功能 PR 混提交。
+- 實作前已存在的 `day3/` 工作區筆記屬於既有使用者內容；本次不覆蓋、不納入暫存，也不與功能 PR 混提交。`.specify/memory/constitution.md` 的 SDD 治理更新則隨本次文件交付納入。
 
 ## 前置條件
 

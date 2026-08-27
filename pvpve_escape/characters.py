@@ -8,6 +8,7 @@ from .models import (
     CharacterId,
     CombatAction,
     PlayerState,
+    TerrainInteraction,
     TacticalDefinition,
     TacticalId,
     Vector2,
@@ -159,6 +160,14 @@ def _safe_direction(direction: Vector2) -> Vector2:
     return direction.normalized() if direction.length() else Vector2(1.0, 0.0)
 
 
+def _resolved_target_distance(target_distance: float | None, fallback: float) -> float:
+    """自動瞄準只改變落點距離；沒有目標時維持原本技能射程。"""
+
+    if target_distance is None or target_distance <= 0.0:
+        return fallback
+    return min(float(target_distance), fallback)
+
+
 def calculate_attack_damage(
     player: PlayerState,
     distance: float,
@@ -188,6 +197,7 @@ def create_primary_action(
     player: PlayerState,
     aim_direction: Vector2,
     primary_charge: float = 0.0,
+    target_distance: float | None = None,
 ) -> CombatAction | None:
     """在冷卻與彈藥允許時產生角色專屬普攻動作。"""
 
@@ -209,6 +219,7 @@ def create_primary_action(
                 "visual": "cone_and_pellet_trails",
                 "impact": "authoritative_cone_sweep",
             },
+            terrain_interaction=TerrainInteraction.BREAK_THIN_ON_PATH,
         )
     if player.character_id == CharacterId.SNIPER:
         return CombatAction(
@@ -224,19 +235,21 @@ def create_primary_action(
             metadata={"angle": definition.parameters.get("angle", 100.0), "knockback": definition.parameters.get("knockback", 120.0), "visual": "shield_arc", "impact": "arc_area"},
         )
     if player.character_id == CharacterId.HUNTER:
+        max_distance = _resolved_target_distance(target_distance, definition.primary_range)
         return CombatAction(
             kind="boomerang", owner_id=player.player_id, origin=origin, direction=direction,
-            damage=definition.primary_damage, range=definition.primary_range, max_distance=definition.primary_range,
+            damage=definition.primary_damage, range=definition.primary_range, max_distance=max_distance,
             projectile_speed=definition.projectile_speed,
             metadata={"visual": "returning_blade", "impact": "outbound_and_return"},
         )
     if player.character_id == CharacterId.CONTROLLER:
+        max_distance = _resolved_target_distance(target_distance, definition.primary_range)
         return CombatAction(
             kind="mine", owner_id=player.player_id,
             origin=origin, direction=direction,
             damage=definition.primary_damage, range=definition.primary_range,
             radius=definition.parameters.get("mine_radius", 100.0), duration=12.0,
-            max_distance=definition.primary_range,
+            max_distance=max_distance,
             projectile_speed=definition.projectile_speed,
             metadata={"slow": definition.parameters.get("slow", 0.5), "slow_duration": definition.parameters.get("slow_duration", 1.5), "visual": "landing_mine", "impact": "armed_area"},
         )
@@ -248,7 +261,11 @@ def create_primary_action(
     )
 
 
-def create_ultimate_action(player: PlayerState, aim_direction: Vector2) -> CombatAction | None:
+def create_ultimate_action(
+    player: PlayerState,
+    aim_direction: Vector2,
+    target_distance: float | None = None,
+) -> CombatAction | None:
     """大招消耗 100 能量後立即歸零；各角色效果完全不同。"""
 
     if not player.alive or player.ultimate_energy < 100.0:
@@ -259,20 +276,27 @@ def create_ultimate_action(player: PlayerState, aim_direction: Vector2) -> Comba
     definition = get_character_definition(player.character_id)
     parameters = definition.parameters
     if player.character_id == CharacterId.BREACHER:
-        return CombatAction("breach_burst", player.player_id, player.position.copy(), direction, parameters.get("ultimate_damage", 55.0), radius=parameters.get("ultimate_radius", 190.0), metadata={"knockback": parameters.get("ultimate_knockback", 120.0), "visual": "radial_burst", "impact": "radial_damage"})
+        return CombatAction("breach_burst", player.player_id, player.position.copy(), direction, parameters.get("ultimate_damage", 55.0), radius=parameters.get("ultimate_radius", 190.0), metadata={"knockback": parameters.get("ultimate_knockback", 120.0), "visual": "radial_burst", "impact": "radial_damage"}, terrain_interaction=TerrainInteraction.BREAK_THIN_IN_AREA)
     if player.character_id == CharacterId.SNIPER:
         return CombatAction("sniper_ultimate_line", player.player_id, player.position.copy(), direction, parameters.get("ultimate_damage", 90.0), range=parameters.get("ultimate_range", 1100.0), metadata={"piercing": 1, "visual": "piercing_line", "impact": "all_targets_in_line"})
     if player.character_id == CharacterId.GUARDIAN:
         return CombatAction("guardian_guard", player.player_id, player.position.copy(), direction, duration=parameters.get("ultimate_duration", 4.0), metadata={"reduction": parameters.get("reduction", 0.7), "visual": "defense_ring", "impact": "self_reduction"})
     if player.character_id == CharacterId.HUNTER:
-        return CombatAction("hunter_dash", player.player_id, player.position.copy(), direction, damage=parameters.get("ultimate_damage", 50.0), max_distance=parameters.get("ultimate_distance", 360.0), duration=parameters.get("ultimate_invulnerability", 0.5), metadata={"visual": "dash_trail", "impact": "path_damage"})
+        max_distance = _resolved_target_distance(target_distance, parameters.get("ultimate_distance", 360.0))
+        return CombatAction("hunter_dash", player.player_id, player.position.copy(), direction, damage=parameters.get("ultimate_damage", 50.0), max_distance=max_distance, duration=parameters.get("ultimate_invulnerability", 0.5), metadata={"visual": "dash_trail", "impact": "path_damage"})
     if player.character_id == CharacterId.CONTROLLER:
         control_duration = calculate_control_duration(player, parameters.get("ultimate_duration", 3.0))
-        return CombatAction("gravity_cage", player.player_id, player.position.copy(), direction, max_distance=220.0, radius=parameters.get("ultimate_radius", 190.0), duration=control_duration, metadata={"slow": parameters.get("ultimate_slow", 0.7), "root": calculate_control_duration(player, parameters.get("ultimate_root", 0.75)), "visual": "gravity_cage", "impact": "slow_and_root"})
+        max_distance = _resolved_target_distance(target_distance, 220.0)
+        return CombatAction("gravity_cage", player.player_id, player.position.copy(), direction, max_distance=max_distance, radius=parameters.get("ultimate_radius", 190.0), duration=control_duration, metadata={"slow": parameters.get("ultimate_slow", 0.7), "root": calculate_control_duration(player, parameters.get("ultimate_root", 0.75)), "visual": "gravity_cage", "impact": "slow_and_root"})
     return CombatAction("siphon_burst", player.player_id, player.position.copy(), direction, damage=parameters.get("ultimate_damage", 60.0), radius=parameters.get("ultimate_radius", 220.0), metadata={"heal_ratio": parameters.get("heal_ratio", 0.5), "visual": "siphon_burst", "impact": "damage_and_heal"})
 
 
-def create_tactical_action(player: PlayerState, aim_direction: Vector2, move_direction: Vector2) -> CombatAction | None:
+def create_tactical_action(
+    player: PlayerState,
+    aim_direction: Vector2,
+    move_direction: Vector2,
+    target_distance: float | None = None,
+) -> CombatAction | None:
     """建立位移、防禦或控場配件動作；開局即可用，固定 12 秒冷卻。"""
 
     if not player.alive or player.tactical_cooldown > 0:
@@ -286,8 +310,9 @@ def create_tactical_action(player: PlayerState, aim_direction: Vector2, move_dir
     else:
         direction = _safe_direction(aim_direction)
     if player.tactical_id == TacticalId.DASH:
-        return CombatAction("tactical_dash", player.player_id, player.position.copy(), direction, max_distance=definition.parameters.get("distance", 220.0), duration=definition.parameters.get("invulnerability", 0.2), projectile_speed=0.0)
+        return CombatAction("tactical_dash", player.player_id, player.position.copy(), direction, max_distance=definition.parameters.get("distance", 220.0), duration=definition.parameters.get("invulnerability", 0.2), projectile_speed=0.0, terrain_interaction=TerrainInteraction.DASH_BREAK_FIRST_THIN)
     if player.tactical_id == TacticalId.SHIELD:
         return CombatAction("tactical_shield", player.player_id, player.position.copy(), direction, duration=definition.parameters.get("duration", 2.0), projectile_speed=0.0, metadata={"absorb": definition.parameters.get("absorb", 60.0)})
     radius = definition.parameters.get("radius", 100.0)
-    return CombatAction("tactical_control", player.player_id, player.position.copy(), direction, radius=radius, max_distance=radius, duration=calculate_control_duration(player, definition.parameters.get("duration", 1.5)), projectile_speed=0.0, metadata={"slow": definition.parameters.get("slow", 0.6)})
+    max_distance = _resolved_target_distance(target_distance, radius)
+    return CombatAction("tactical_control", player.player_id, player.position.copy(), direction, radius=radius, max_distance=max_distance, duration=calculate_control_duration(player, definition.parameters.get("duration", 1.5)), projectile_speed=0.0, metadata={"slow": definition.parameters.get("slow", 0.6)})

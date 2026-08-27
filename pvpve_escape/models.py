@@ -15,6 +15,15 @@ class MatchPhase(str, Enum):
     NO_WINNER = "NO_WINNER"
 
 
+class AppScreen(str, Enum):
+    """應用程式畫面；與單局內的 MatchPhase 分開保存。"""
+
+    INTRO = "INTRO"
+    CHARACTER_SELECT = "CHARACTER_SELECT"
+    PLAYING = "PLAYING"
+    RESULT = "RESULT"
+
+
 class PlayerStatus(str, Enum):
     ALIVE = "ALIVE"
     DEAD = "DEAD"
@@ -38,6 +47,28 @@ class TacticalId(str, Enum):
     DASH = "DASH"
     SHIELD = "SHIELD"
     CONTROL = "CONTROL"
+
+
+class ObstacleKind(str, Enum):
+    """地圖牆體種類；薄牆可破壞，厚牆整場固定存在。"""
+
+    THICK_WALL = "thick_wall"
+    THIN_WALL = "thin_wall"
+
+
+class TerrainInteraction(str, Enum):
+    """動作和牆、草叢互動時採用的明確政策。"""
+
+    BLOCK = "BLOCK"
+    BREAK_THIN_ON_PATH = "BREAK_THIN_ON_PATH"
+    BREAK_THIN_IN_AREA = "BREAK_THIN_IN_AREA"
+    DASH_BREAK_FIRST_THIN = "DASH_BREAK_FIRST_THIN"
+
+
+class MonsterType(str, Enum):
+    CHASER = "CHASER"
+    SHOOTER = "SHOOTER"
+    BRUTE = "BRUTE"
 
 
 @dataclass
@@ -81,6 +112,82 @@ class Vector2:
 
     def tuple(self) -> tuple[float, float]:
         return self.x, self.y
+
+
+@dataclass(frozen=True)
+class WorldRect:
+    """不依賴 Pygame 的軸對齊世界矩形。"""
+
+    left: float
+    top: float
+    width: float
+    height: float
+
+    def __post_init__(self) -> None:
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError("WorldRect width and height must be positive")
+
+    @property
+    def right(self) -> float:
+        return self.left + self.width
+
+    @property
+    def bottom(self) -> float:
+        return self.top + self.height
+
+    @property
+    def center(self) -> Vector2:
+        return Vector2(self.left + self.width / 2, self.top + self.height / 2)
+
+    def contains(self, point: Vector2) -> bool:
+        return (
+            self.left <= point.x <= self.right
+            and self.top <= point.y <= self.bottom
+        )
+
+
+@dataclass
+class ObstacleState:
+    """單局牆體狀態；destroyed 只允許薄牆變成 True。"""
+
+    obstacle_id: int
+    kind: ObstacleKind
+    bounds: WorldRect
+    destroyed: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, ObstacleKind):
+            self.kind = ObstacleKind(self.kind)
+        if self.kind == ObstacleKind.THICK_WALL:
+            self.destroyed = False
+
+    @property
+    def solid(self) -> bool:
+        return not self.destroyed
+
+    @property
+    def destructible(self) -> bool:
+        return self.kind == ObstacleKind.THIN_WALL
+
+
+@dataclass
+class BushState:
+    """單局草叢狀態；active=False 後不再提供隱藏或繪製。"""
+
+    bush_id: int
+    bounds: WorldRect
+    active: bool = True
+
+
+@dataclass
+class TerrainHitResult:
+    """一次牆體路徑查詢的結果與可用端點。"""
+
+    obstacle: ObstacleState | None = None
+    distance: float = 0.0
+    position: Vector2 = field(default_factory=Vector2)
+    blocked: bool = False
+    destroyed: bool = False
 
 
 @dataclass
@@ -155,6 +262,7 @@ class CombatAction:
     max_distance: float = 0.0
     projectile_speed: float = 0.0
     metadata: dict[str, float | int | str] = field(default_factory=dict)
+    terrain_interaction: TerrainInteraction = TerrainInteraction.BLOCK
 
 
 @dataclass
@@ -186,6 +294,8 @@ class AbilityEffect:
     # 固定的施放原點；position 只表示目前前端或範圍中心。
     # 放在既有預設欄位之後，保留舊版 positional dataclass 建構相容性。
     origin: Vector2 = field(default_factory=Vector2)
+    terrain_interaction: TerrainInteraction = TerrainInteraction.BLOCK
+    terrain_blocker_snapshot: tuple[tuple[int, ObstacleKind, WorldRect], ...] = field(default_factory=tuple)
 
 
 @dataclass
@@ -236,6 +346,9 @@ class PlayerState:
     primary_charge: float = 0.0
     ability_input_blocked: bool = False
     last_damage_time: float = 0.0
+    auto_aim_enabled: bool = True
+    # 本功能欄位追加在現有工作樹欄位之後，保留 positional 建構順序。
+    last_attack_time: float = 0.0
 
     @property
     def alive(self) -> bool:
@@ -244,6 +357,45 @@ class PlayerState:
     @alive.setter
     def alive(self, value: bool) -> None:
         self.status = PlayerStatus.ALIVE if value else PlayerStatus.DEAD
+
+
+@dataclass(frozen=True)
+class MonsterDefinition:
+    """怪物種類的固定資料；單隻怪物在建立時快照這些戰鬥數值。"""
+
+    monster_type: MonsterType
+    display_name: str
+    max_health: float
+    move_speed: float
+    radius: float
+    attack_kind: str
+    attack_damage: float
+    attack_interval: float
+    attack_range: float = 0.0
+    preferred_range: float = 0.0
+    projectile_speed: float = 0.0
+    projectile_radius: float = 0.0
+    projectile_range: float = 0.0
+
+
+@dataclass
+class MonsterProjectileState:
+    """怪物射手的可閃避投射物；以實際前後位置線段判定碰撞。"""
+
+    projectile_id: int
+    source_monster_id: int
+    position: Vector2
+    direction: Vector2
+    damage: float
+    projectile_speed: float
+    radius: float
+    max_distance: float
+    previous_position: Vector2 = field(default_factory=Vector2)
+    distance_travelled: float = 0.0
+    remaining: float = 0.0
+    impact_position: Vector2 | None = None
+    impact_status: str = ""
+    impact_target_id: int | None = None
 
 
 @dataclass
@@ -264,6 +416,8 @@ class MonsterState:
     slow_multiplier: float = 1.0
     root_timer: float = 0.0
     alive: bool = True
+    monster_type: MonsterType = MonsterType.CHASER
+    aim_direction: Vector2 = field(default_factory=lambda: Vector2(1.0, 0.0))
 
 
 @dataclass
@@ -308,3 +462,10 @@ class MatchState:
     messages: list[tuple[str, float]] = field(default_factory=list)
     next_effect_id: int = 1
     next_event_sequence: int = 1
+    monster_projectiles: list[MonsterProjectileState] = field(default_factory=list)
+    next_monster_projectile_id: int = 1
+    # 每個實體保存帶時間戳的位置，供自動瞄準取 lookback 秒前的座標。
+    position_history: dict[tuple[str, int], list[tuple[float, Vector2]]] = field(default_factory=dict)
+    # 本功能欄位追加在現有工作樹欄位之後，保留 positional 建構順序。
+    obstacles: list[ObstacleState] = field(default_factory=list)
+    bushes: list[BushState] = field(default_factory=list)

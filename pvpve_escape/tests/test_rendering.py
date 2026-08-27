@@ -204,6 +204,7 @@ class TraditionalChineseFontTests(unittest.TestCase):
             other.alive = False
         sniper.position = Vector2(500, 260)
         target.position = Vector2(650, 260)
+        sniper.auto_aim_enabled = False
         target_health = target.health
 
         with patch("pygame.mouse.get_pressed", side_effect=[(True, False, False), (False, False, False)]):
@@ -223,6 +224,8 @@ class TraditionalChineseFontTests(unittest.TestCase):
             )
         release.aim_direction = Vector2(1, 0)
         update_match(match, release, 0.05)
+        update_match(match, InputState(aim_direction=Vector2(1, 0)), 0.05)
+        update_match(match, InputState(aim_direction=Vector2(1, 0)), 0.05)
         update_match(match, InputState(aim_direction=Vector2(1, 0)), 0.05)
 
         self.assertLess(target.health, target_health)
@@ -266,6 +269,75 @@ class TraditionalChineseFontTests(unittest.TestCase):
             if 0 <= x < surface.get_width() and 0 <= y < surface.get_height()
         )
         self.assertGreater(visible_pixels, 20)
+
+    def test_all_confirmed_walls_and_bushes_are_rendered_on_the_map_layer(self) -> None:
+        match = create_match()
+        match.camera.position = Vector2()
+        surface = pygame.Surface((config.WORLD_WIDTH, config.WORLD_HEIGHT))
+        surface.fill(config.GROUND_COLOR)
+
+        rendering.draw_terrain(surface, match)
+
+        for kind, left, top, width, height in config.OBSTACLE_LAYOUT:
+            point = (left + width // 2, top + height // 2)
+            expected_color = (
+                config.THICK_WALL_COLOR
+                if kind == "thick_wall"
+                else config.THIN_WALL_COLOR
+            )
+            self.assertEqual(
+                surface.get_at(point)[:3],
+                expected_color,
+                f"{kind} at {point} should be visible with its configured fill color",
+            )
+
+        for left, top, width, height in config.BUSH_LAYOUT:
+            point = (left + width // 2, top + height // 2)
+            self.assertEqual(
+                surface.get_at(point)[:3],
+                config.BUSH_COLOR,
+                f"bush at {point} should be visible with its configured fill color",
+            )
+
+    def test_confirmed_terrain_is_visible_in_the_actual_game_viewport_after_camera_moves(self) -> None:
+        """正式 1280×720 畫面移到不同世界區域時，牆與草叢都能被取樣。"""
+
+        match = create_match()
+        # 移除會遮住取樣點的生物，只驗證 draw_match 的正式地圖繪製鏈。
+        match.players = []
+        match.monsters = []
+        surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+
+        for _ in range(20):
+            # 開場左上視角：這兩個點位於第一個視窗內，且不在 HUD 區域。
+            match.camera.position = Vector2(0, 0)
+            rendering.draw_match(surface, match)
+            self.assertEqual(surface.get_at((1030, 450))[:3], config.THICK_WALL_COLOR)
+            self.assertEqual(surface.get_at((970, 280))[:3], config.BUSH_COLOR)
+
+            # 移到地圖右下區域：確認世界座標不是只在開場畫面硬編碼繪製。
+            match.camera.position = Vector2(1200, 700)
+            rendering.draw_match(surface, match)
+            self.assertEqual(surface.get_at((860, 550))[:3], config.THIN_WALL_COLOR)
+            self.assertEqual(surface.get_at((770, 30))[:3], config.BUSH_COLOR)
+
+    def test_destroyed_terrain_is_removed_from_the_next_map_draw(self) -> None:
+        match = create_match()
+        match.camera.position = Vector2()
+        surface = pygame.Surface((config.WORLD_WIDTH, config.WORLD_HEIGHT))
+
+        wall = match.obstacles[4]
+        bush = match.bushes[0]
+        wall_center = (round(wall.bounds.center.x), round(wall.bounds.center.y))
+        bush_center = (round(bush.bounds.center.x), round(bush.bounds.center.y))
+        wall.destroyed = True
+        bush.active = False
+        surface.fill(config.GROUND_COLOR)
+
+        rendering.draw_terrain(surface, match)
+
+        self.assertEqual(surface.get_at(wall_center)[:3], config.GROUND_COLOR)
+        self.assertEqual(surface.get_at(bush_center)[:3], config.GROUND_COLOR)
 
     def test_every_role_primary_and_ultimate_creates_a_visual_effect(self) -> None:
         expected_primary = {
@@ -422,7 +494,7 @@ class TraditionalChineseFontTests(unittest.TestCase):
         update_match(mine_match, InputState(), 0.05)
         mine = next(effect for effect in mine_match.effects if effect.kind == "mine")
         self.assertFalse(mine.armed)
-        for _ in range(14):
+        for _ in range(26):
             update_match(mine_match, InputState(), 0.05)
         self.assertTrue(mine.armed)
         rendering.draw_match(pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT)), mine_match)

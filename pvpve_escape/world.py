@@ -6,6 +6,7 @@ import math
 
 from . import config
 from .aiming import clamp_aim_endpoint
+from .auto_aim import record_position_history, resolve_auto_aim
 from .characters import (
     calculate_attack_damage,
     calculate_control_duration,
@@ -23,10 +24,27 @@ from .models import (
     DamageEvent,
     MatchPhase,
     MatchState,
+    MonsterProjectileState,
     MonsterState,
+    MonsterType,
+    ObstacleKind,
+    ObstacleState,
+    TerrainHitResult,
+    TerrainInteraction,
     PlayerState,
     TacticalId,
     Vector2,
+    WorldRect,
+)
+from .monsters import MONSTER_SPAWN_ORDER, create_monster_state, get_monster_definition
+from .terrain import (
+    build_terrain,
+    destroy_bushes_on_segment,
+    destroy_terrain_in_radius,
+    first_obstacle_on_segment,
+    move_circle_with_obstacles,
+    resolve_dash_path,
+    snapshot_obstacles,
 )
 from .rules import (
     add_ultimate_energy,
@@ -43,6 +61,9 @@ from .rules import (
     update_monster_timers,
     update_extraction_progress,
     update_player_timers,
+    action_counts_as_attack,
+    mark_player_attack,
+    regenerate_player_health,
     is_visual_only_effect,
     primary_attack_active,
 )
@@ -78,26 +99,15 @@ def get_monster_camp_points() -> tuple[Vector2, ...]:
 
 
 def create_monsters() -> list[MonsterState]:
-    """建立四個生成區、每區三隻基礎近戰怪物。"""
+    """建立四個生成區，每區各一隻三種怪物。"""
 
     offsets = (Vector2(-36, 0), Vector2(36, 0), Vector2(0, 36))
     monsters: list[MonsterState] = []
     monster_id = 0
     for zone_id, center in enumerate(get_monster_camp_points()):
-        for offset in offsets:
+        for offset, monster_type in zip(offsets, MONSTER_SPAWN_ORDER):
             spawn = center + offset
-            monsters.append(
-                MonsterState(
-                    monster_id=monster_id,
-                    spawn_zone_id=zone_id,
-                    position=spawn.copy(),
-                    spawn_position=spawn.copy(),
-                    radius=config.MONSTER_RADIUS,
-                    max_health=config.MONSTER_HEALTH,
-                    health=config.MONSTER_HEALTH,
-                    move_speed=config.MONSTER_SPEED,
-                )
-            )
+            monsters.append(create_monster_state(monster_id, zone_id, spawn, monster_type))
             monster_id += 1
     return monsters
 
@@ -139,8 +149,10 @@ def create_match(
                 move_speed=config.PLAYER_BASE_SPEED * (1.15 if role == CharacterId.HUNTER else 1.0),
                 ammo=definition.ammo_capacity,
                 ammo_capacity=definition.ammo_capacity,
+                auto_aim_enabled=config.AUTO_AIM_DEFAULT_ENABLED,
             )
         )
+    obstacles, bushes = build_terrain()
     match = MatchState(
         phase=MatchPhase.PLAYING,
         duration=config.MATCH_DURATION,
@@ -148,21 +160,29 @@ def create_match(
         extraction_required_time=config.EXTRACTION_REQUIRED_TIME,
         players=players,
         monsters=create_monsters(),
+        obstacles=obstacles,
+        bushes=bushes,
     )
+    record_position_history(match)
     match.camera.follow(players[0].position)
     return match
 
 
-def update_player_movement(player: PlayerState, move_direction: Vector2, delta_time: float) -> None:
+def update_player_movement(
+    player: PlayerState,
+    move_direction: Vector2,
+    delta_time: float,
+    obstacles: list[ObstacleState] | None = None,
+) -> None:
     """更新存活玩家位置並以碰撞半徑夾制在世界邊界內。"""
 
     if not player.alive or player.root_timer > 0:
         return
     direction = move_direction.normalized()
-    player.position = clamp_position(
-        player.position + direction * (player.move_speed * max(0.0, delta_time) * player.slow_multiplier),
-        player.radius,
-    )
+    movement = direction * (player.move_speed * max(0.0, delta_time) * player.slow_multiplier)
+    if obstacles is not None:
+        player.position = move_circle_with_obstacles(player.position, movement, player.radius, obstacles)
+    player.position = clamp_position(player.position, player.radius)
 
 
 def update_camera(match: MatchState) -> None:
@@ -193,6 +213,80 @@ def _bounded_endpoint(
     """回傳與瞄準預覽相同的世界內有效端點。"""
 
     return clamp_aim_endpoint(origin, direction, max(0.0, distance), margin=margin)
+
+
+def _resolve_action_path(
+    match: MatchState,
+    action: CombatAction,
+    distance: float,
+    radius: float = 0.0,
+) -> tuple[TerrainHitResult, tuple[tuple[int, ObstacleKind, WorldRect], ...]]:
+    """以動作政策解析路徑，並在必要時記錄施放瞬間的牆體快照。"""
+
+    requested_distance = max(0.0, float(distance))
+    bounded_end = _bounded_endpoint(action.origin, action.direction, requested_distance, radius)
+    blocker_snapshot: tuple[tuple[int, ObstacleKind, WorldRect], ...] = ()
+    source = match.obstacles
+    if action.terrain_interaction == TerrainInteraction.BREAK_THIN_ON_PATH:
+        blocker_snapshot = snapshot_obstacles(match.obstacles)
+        source = blocker_snapshot
+    result = first_obstacle_on_segment(action.origin, bounded_end, source, radius)
+    if (
+        result.obstacle is not None
+        and action.terrain_interaction == TerrainInteraction.BREAK_THIN_ON_PATH
+        and result.obstacle.destructible
+    ):
+        actual_obstacle = next(
+            (
+                obstacle
+                for obstacle in match.obstacles
+                if obstacle.obstacle_id == result.obstacle.obstacle_id
+            ),
+            None,
+        )
+        if actual_obstacle is not None:
+            actual_obstacle.destroyed = True
+            result.obstacle = actual_obstacle
+        result.destroyed = True
+    if action.terrain_interaction == TerrainInteraction.BREAK_THIN_ON_PATH:
+        destroy_bushes_on_segment(action.origin, result.position, match.bushes, radius)
+    return result, blocker_snapshot
+
+
+def _path_end_for_action(
+    match: MatchState,
+    action: CombatAction,
+    distance: float,
+    radius: float = 0.0,
+) -> tuple[Vector2, float, TerrainHitResult, tuple[tuple[int, ObstacleKind, WorldRect], ...]]:
+    """回傳受世界邊界與牆體截斷的端點、距離及解析結果。"""
+
+    result, blocker_snapshot = _resolve_action_path(match, action, distance, radius)
+    return result.position.copy(), result.distance, result, blocker_snapshot
+
+
+def _resolve_dash_path(
+    match: MatchState,
+    start: Vector2,
+    direction: Vector2,
+    max_distance: float,
+    radius: float,
+    allow_first_thin_break: bool = False,
+) -> tuple[Vector2, float, TerrainHitResult | None, tuple[tuple[int, ObstacleKind, WorldRect], ...]]:
+    """解析衝刺；DASH 只移除每段路徑首先遇到的薄牆並續走。"""
+    current, travelled, removed_ids, last_hit = resolve_dash_path(
+        start,
+        direction,
+        max_distance,
+        radius,
+        match.obstacles,
+        allow_first_thin_break=allow_first_thin_break,
+    )
+    for obstacle in match.obstacles:
+        if obstacle.obstacle_id in removed_ids and obstacle.destructible:
+            obstacle.destroyed = True
+    destroy_bushes_on_segment(start, current, match.bushes, radius)
+    return current, travelled, last_hit, ()
 
 
 def _target_entries(match: MatchState, owner_id: int):
@@ -281,7 +375,16 @@ def _knockback(match: MatchState, target_kind: str, target_id: int, origin: Vect
     if target is None:
         return
     direction = (target.position - origin).normalized()
-    target.position = clamp_position(target.position + direction * distance, target.radius)
+    if not direction.length():
+        return
+    movement = direction * max(0.0, float(distance))
+    target.position = move_circle_with_obstacles(
+        target.position,
+        movement,
+        target.radius,
+        match.obstacles,
+    )
+    target.position = clamp_position(target.position, target.radius)
 
 
 def _targets_in_radius(match: MatchState, owner_id: int, center: Vector2, radius: float):
@@ -297,9 +400,14 @@ def _targets_in_line(
     direction: Vector2,
     range_distance: float,
     width: float = 14.0,
+    obstacles: list[ObstacleState] | None = None,
+    blocker_snapshot: tuple[tuple[int, ObstacleKind, WorldRect], ...] | None = None,
 ):
     normalized_direction = direction.normalized() if direction.length() else Vector2(1, 0)
     end = origin + normalized_direction * range_distance
+    if obstacles is not None or blocker_snapshot is not None:
+        source = blocker_snapshot if blocker_snapshot is not None else obstacles or []
+        end = first_obstacle_on_segment(origin, end, source, width).position
     return _targets_in_segment(match, owner_id, origin, end, width)
 
 
@@ -342,6 +450,12 @@ def _next_effect(match: MatchState, kind: str, action: CombatAction, **kwargs) -
         metadata.update(metadata_override)
     radius = float(effect_values.get("radius", action.radius))
     max_distance = float(effect_values["max_distance"])
+    terrain_interaction = effect_values.get("terrain_interaction", action.terrain_interaction)
+    if not isinstance(terrain_interaction, TerrainInteraction):
+        terrain_interaction = TerrainInteraction(terrain_interaction)
+    terrain_blocker_snapshot = effect_values.get("terrain_blocker_snapshot", ())
+    if terrain_interaction == TerrainInteraction.BREAK_THIN_ON_PATH and not terrain_blocker_snapshot:
+        terrain_blocker_snapshot = snapshot_obstacles(match.obstacles)
     if max_distance > 0:
         # 所有具有路徑的效果都沿同一條世界內有效射線截斷；半徑較大的
         # 投射物需要使用內縮邊界，避免中心雖在世界內但圖像／碰撞半徑穿出。
@@ -362,6 +476,8 @@ def _next_effect(match: MatchState, kind: str, action: CombatAction, **kwargs) -
         armed=bool(effect_values.get("armed", True)),
         metadata=metadata,
         origin=action.origin.copy(),
+        terrain_interaction=terrain_interaction,
+        terrain_blocker_snapshot=tuple(terrain_blocker_snapshot),
     )
     if kind == "breach_cone":
         # 每一個 target key 對應已結算的 pellet index 集合；這個資料只
@@ -379,7 +495,18 @@ def _next_effect(match: MatchState, kind: str, action: CombatAction, **kwargs) -
 def _apply_action(match: MatchState, action: CombatAction) -> None:
     """將角色動作轉為立即命中或短生命週期效果。"""
 
+    owner = _get_target(match, "player", action.owner_id)
+    if owner is not None and action_counts_as_attack(action):
+        mark_player_attack(owner)
+
     if action.kind == "breach_cone":
+        path_end, path_distance, _, blocker_snapshot = _path_end_for_action(
+            match,
+            action,
+            action.range,
+            config.BREACH_PELLET_RADIUS,
+        )
+        action.range = path_distance
         pellet_count = int(action.metadata.get("pellets", config.BREACH_PELLET_COUNT))
         spread_angle = float(action.metadata.get("angle", config.BREACH_CONE_ANGLE_DEGREES))
         cone_effect = _next_effect(
@@ -389,7 +516,8 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
             remaining=action.range / max(action.projectile_speed, 0.001) + 0.20,
             max_distance=action.range,
             projectile_speed=action.projectile_speed,
-            metadata={"visual_only": 0, "pellet_hits": {}},
+            metadata={"visual_only": 0, "pellet_hits": {}, "path_end": path_end},
+            terrain_blocker_snapshot=blocker_snapshot,
         )
         center_angle = math.atan2(action.direction.y, action.direction.x)
         divisor = max(1, pellet_count - 1)
@@ -413,6 +541,7 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
                     "visual_only": 1,
                     "visual_parent_effect_id": cone_effect.effect_id,
                 },
+                terrain_interaction=TerrainInteraction.BREAK_THIN_ON_PATH,
             )
             _next_effect(
                 match,
@@ -421,10 +550,18 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
                 remaining=action.range / max(action.projectile_speed, 0.001) + 0.2,
                 max_distance=action.range,
                 radius=config.BREACH_PELLET_RADIUS,
+                terrain_blocker_snapshot=blocker_snapshot,
             )
         return
     if action.kind == "sniper_line":
         projectile_speed = max(action.projectile_speed, 0.001)
+        _, path_distance, _, blocker_snapshot = _path_end_for_action(
+            match,
+            action,
+            action.range,
+            config.SNIPER_PROJECTILE_RADIUS,
+        )
+        action.range = path_distance
         _next_effect(
             match,
             "sniper_line",
@@ -433,16 +570,35 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
             max_distance=action.range,
             projectile_speed=projectile_speed,
             radius=config.SNIPER_PROJECTILE_RADIUS,
+            terrain_blocker_snapshot=blocker_snapshot,
         )
         return
     if action.kind == "sniper_ultimate_line":
-        action.range = action.origin.distance_to(
-            _bounded_endpoint(action.origin, action.direction, action.range)
+        _, action.range, _, blocker_snapshot = _path_end_for_action(
+            match,
+            action,
+            action.range,
+            10.0,
         )
-        hits = _targets_in_line(match, action.owner_id, action.origin, action.direction, action.range, 10.0)
+        hits = _targets_in_line(
+            match,
+            action.owner_id,
+            action.origin,
+            action.direction,
+            action.range,
+            10.0,
+            obstacles=match.obstacles,
+        )
         for _, target_kind, target_id in hits:
             apply_damage(match, action.owner_id, target_kind, target_id, _scaled_action_damage(match, action, target_kind, target_id))
-        _next_effect(match, "sniper_ultimate_line", action, remaining=0.30, max_distance=action.range)
+        _next_effect(
+            match,
+            "sniper_ultimate_line",
+            action,
+            remaining=0.30,
+            max_distance=action.range,
+            terrain_blocker_snapshot=blocker_snapshot,
+        )
         return
     if action.kind == "guardian_arc":
         action.range = action.origin.distance_to(
@@ -459,6 +615,13 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
         _next_effect(match, "guardian_arc", action, remaining=0.45, max_distance=action.range)
         return
     if action.kind == "boomerang":
+        _, path_distance, _, blocker_snapshot = _path_end_for_action(
+            match,
+            action,
+            action.max_distance or action.range,
+            config.BOOMERANG_PROJECTILE_RADIUS,
+        )
+        action.max_distance = path_distance
         _next_effect(
             match,
             "boomerang",
@@ -467,19 +630,20 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
             max_distance=action.max_distance or action.range,
             projectile_speed=action.projectile_speed,
             radius=config.BOOMERANG_PROJECTILE_RADIUS,
+            terrain_blocker_snapshot=blocker_snapshot,
         )
         return
     if action.kind == "mine":
         active_mines = [effect for effect in match.effects if effect.owner_id == action.owner_id and effect.kind == "mine"]
         if len(active_mines) >= 2:
             match.effects.remove(active_mines[0])
-        landing = _bounded_endpoint(
-            action.origin,
-            action.direction,
+        landing, distance, _, blocker_snapshot = _path_end_for_action(
+            match,
+            action,
             action.max_distance or action.range,
             config.MINE_PROJECTILE_RADIUS,
         )
-        distance = action.origin.distance_to(landing)
+        action.max_distance = distance
         _next_effect(
             match,
             "mine",
@@ -490,12 +654,34 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
             radius=config.MINE_PROJECTILE_RADIUS,
             armed=False,
             metadata={"slow": action.metadata.get("slow", 0.5), "slow_duration": action.metadata.get("slow_duration", 1.5), "area_radius": action.radius},
+            terrain_blocker_snapshot=blocker_snapshot,
         )
         return
     if action.kind == "beam":
-        _next_effect(match, "beam", action, remaining=action.duration, max_distance=action.range, tick_timer=0.0)
+        _, action.range, _, blocker_snapshot = _path_end_for_action(
+            match,
+            action,
+            action.range,
+            16.0,
+        )
+        _next_effect(
+            match,
+            "beam",
+            action,
+            remaining=action.duration,
+            max_distance=action.range,
+            tick_timer=0.0,
+            terrain_blocker_snapshot=blocker_snapshot,
+        )
         return
     if action.kind in {"breach_burst", "siphon_burst"}:
+        if action.kind == "breach_burst":
+            destroy_terrain_in_radius(
+                action.origin,
+                action.radius,
+                match.obstacles,
+                match.bushes,
+            )
         total_effective = 0.0
         for target_kind, target_id, _, _ in list(_targets_in_radius(match, action.owner_id, action.origin, action.radius)):
             event = apply_damage(match, action.owner_id, target_kind, target_id, _scaled_action_damage(match, action, target_kind, target_id))
@@ -521,33 +707,74 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
         if owner is None:
             return
         start = owner.position.copy()
-        landing = _bounded_endpoint(start, action.direction, action.max_distance, owner.radius)
+        landing, _, _, blocker_snapshot = _path_end_for_action(
+            match,
+            action,
+            action.max_distance,
+            owner.radius,
+        )
         action.origin = start.copy()
         action.max_distance = start.distance_to(landing)
         owner.invulnerability_timer = action.duration
         owner.position = landing
-        for _, target_kind, target_id in _targets_in_line(match, action.owner_id, start, action.direction, action.max_distance, 28.0):
+        for _, target_kind, target_id in _targets_in_line(
+            match,
+            action.owner_id,
+            start,
+            action.direction,
+            action.max_distance,
+            28.0,
+            obstacles=match.obstacles,
+        ):
             apply_damage(match, action.owner_id, target_kind, target_id, _scaled_action_damage(match, action, target_kind, target_id))
-        _next_effect(match, "hunter_dash", action, remaining=0.65)
+        _next_effect(
+            match,
+            "hunter_dash",
+            action,
+            remaining=0.65,
+            terrain_blocker_snapshot=blocker_snapshot,
+        )
         return
     if action.kind == "gravity_cage":
         distance = action.max_distance or action.range
         if distance > 0:
-            action.origin = _bounded_endpoint(action.origin, action.direction, distance)
+            action.origin, _, _, blocker_snapshot = _path_end_for_action(match, action, distance)
             action.max_distance = 0.0
         else:
             action.origin = clamp_position(action.origin, 0.0)
-        _next_effect(match, "gravity_cage", action, remaining=action.duration)
+            blocker_snapshot = ()
+        _next_effect(
+            match,
+            "gravity_cage",
+            action,
+            remaining=action.duration,
+            terrain_blocker_snapshot=blocker_snapshot,
+        )
         return
     if action.kind == "tactical_dash":
         owner = _get_target(match, "player", action.owner_id)
         if owner is not None:
-            landing = _bounded_endpoint(owner.position, action.direction, action.max_distance, owner.radius)
             action.origin = owner.position.copy()
-            action.max_distance = owner.position.distance_to(landing)
+            landing, distance, _, blocker_snapshot = _resolve_dash_path(
+                match,
+                action.origin,
+                action.direction,
+                action.max_distance,
+                owner.radius,
+                allow_first_thin_break=True,
+            )
+            action.max_distance = distance
             owner.invulnerability_timer = action.duration
             owner.position = landing
-        _next_effect(match, "dash", action, remaining=0.45)
+        else:
+            blocker_snapshot = ()
+        _next_effect(
+            match,
+            "dash",
+            action,
+            remaining=0.45,
+            terrain_blocker_snapshot=blocker_snapshot,
+        )
         return
     if action.kind == "tactical_shield":
         owner = _get_target(match, "player", action.owner_id)
@@ -559,11 +786,18 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
     if action.kind == "tactical_control":
         distance = action.max_distance or action.range
         if distance > 0:
-            action.origin = _bounded_endpoint(action.origin, action.direction, distance)
+            action.origin, _, _, blocker_snapshot = _path_end_for_action(match, action, distance)
             action.max_distance = 0.0
         else:
             action.origin = clamp_position(action.origin, 0.0)
-        _next_effect(match, "control_zone", action, remaining=action.duration)
+            blocker_snapshot = ()
+        _next_effect(
+            match,
+            "control_zone",
+            action,
+            remaining=action.duration,
+            terrain_blocker_snapshot=blocker_snapshot,
+        )
 
 
 def _projectile_impact(
@@ -619,7 +853,12 @@ def _projectile_impact(
     return event
 
 
-def _advance_projectile(effect: AbilityEffect, delta_time: float) -> tuple[Vector2, Vector2]:
+def _advance_projectile(
+    effect: AbilityEffect,
+    delta_time: float,
+    obstacles: list[ObstacleState] | None = None,
+    blocker_snapshot: tuple[tuple[int, ObstacleKind, WorldRect], ...] | None = None,
+) -> tuple[Vector2, Vector2]:
     """以唯一的 projectile_speed 欄位更新飛行物，回傳本幀前後位置。"""
 
     previous = effect.position.copy()
@@ -633,10 +872,28 @@ def _advance_projectile(effect: AbilityEffect, delta_time: float) -> tuple[Vecto
         previous + effect.direction * step_distance,
         max(0.0, effect.radius),
     )
+    terrain_hit = None
+    if obstacles is not None or blocker_snapshot is not None:
+        source = blocker_snapshot if blocker_snapshot is not None else obstacles or []
+        terrain_hit = first_obstacle_on_segment(previous, next_position, source, effect.radius)
+        if terrain_hit.blocked:
+            next_position = terrain_hit.position.copy()
     actual_distance = previous.distance_to(next_position)
     effect.position = next_position
     effect.distance_travelled += actual_distance
     effect.metadata["visible_start"] = previous.copy()
+    if terrain_hit is not None and terrain_hit.blocked:
+        effect.metadata["terrain_blocked"] = 1
+        effect.metadata["terrain_obstacle_id"] = terrain_hit.obstacle.obstacle_id if terrain_hit.obstacle else -1
+        effect.metadata["terrain_obstacle_kind"] = terrain_hit.obstacle.kind.value if terrain_hit.obstacle else ""
+        effect.metadata["impacted"] = 1
+        effect.metadata["impact_target_kind"] = "terrain"
+        effect.metadata["impact_target_id"] = -1
+        effect.metadata["impact_blocked"] = 1
+        effect.metadata["impact_status"] = "牆"
+        effect.metadata["impact_position"] = next_position.copy()
+        effect.impact_position = next_position.copy()
+        effect.impact_status = "牆"
     return previous, next_position.copy()
 
 
@@ -681,8 +938,11 @@ def _breach_cone_intersects_target(
 def _update_breach_cone(match: MatchState, effect: AbilityEffect, delta_time: float) -> None:
     """以單一權威效果掃掠完整扇形並結算每顆 pellet 的傷害機會。"""
 
+    if effect.metadata.get("terrain_blocked"):
+        return
     previous_front = effect.distance_travelled
-    _advance_projectile(effect, delta_time)
+    blocker_snapshot = effect.terrain_blocker_snapshot or None
+    _advance_projectile(effect, delta_time, match.obstacles, blocker_snapshot)
     current_front = effect.distance_travelled
     pellet_count = max(0, int(effect.metadata.get("pellets", config.BREACH_PELLET_COUNT)))
     angle_degrees = float(effect.metadata.get("angle", config.BREACH_CONE_ANGLE_DEGREES))
@@ -744,6 +1004,9 @@ def _update_breach_cone(match: MatchState, effect: AbilityEffect, delta_time: fl
                 "status": "命中" if total_effective > 0 else "被擋／免傷",
             }
             effect.metadata["impacted"] = 1
+    if effect.metadata.get("terrain_blocked"):
+        effect.metadata["sweep_complete"] = 1
+        effect.remaining = min(effect.remaining, 0.12)
 
 
 
@@ -774,8 +1037,17 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
             # 視覺-only 效果只更新自己的位置與壽命，絕不進入目標
             # 碰撞、傷害、控制或大招能量流程。
             effect.remaining -= delta_time
+            if effect.metadata.get("terrain_blocked"):
+                if effect.remaining > 0:
+                    retained.append(effect)
+                continue
             if effect.projectile_speed > 0.0:
-                _advance_projectile(effect, delta_time)
+                _advance_projectile(
+                    effect,
+                    delta_time,
+                    match.obstacles,
+                    effect.terrain_blocker_snapshot or None,
+                )
             if effect.remaining > 0 and (
                 effect.max_distance <= 0.0
                 or effect.distance_travelled < effect.max_distance
@@ -818,10 +1090,41 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
                         )
                     else:
                         current = owner.position.copy()
+                    return_terrain = first_obstacle_on_segment(
+                        previous,
+                        current,
+                        effect.terrain_blocker_snapshot or match.obstacles,
+                        effect.radius,
+                    )
+                    if return_terrain.blocked:
+                        current = return_terrain.position.copy()
+                        effect.metadata["terrain_blocked"] = 1
+                        effect.metadata["terrain_obstacle_id"] = (
+                            return_terrain.obstacle.obstacle_id
+                            if return_terrain.obstacle is not None
+                            else -1
+                        )
+                        effect.metadata["terrain_obstacle_kind"] = (
+                            return_terrain.obstacle.kind.value
+                            if return_terrain.obstacle is not None
+                            else ""
+                        )
+                        effect.impact_position = current.copy()
+                        effect.impact_status = "牆"
+                        effect.remaining = min(effect.remaining, 0.14)
+                    else:
+                        # 擁有者若繞到牆的同一側，回程可以恢復；上一幀的
+                        # 牆阻擋狀態不應讓飛刃無條件停到生命週期結束。
+                        effect.metadata.pop("terrain_blocked", None)
                     effect.position = current.copy()
                     effect.metadata["visible_start"] = previous.copy()
                 else:
-                    previous, current = _advance_projectile(effect, delta_time)
+                    previous, current = _advance_projectile(
+                        effect,
+                        delta_time,
+                        match.obstacles,
+                        effect.terrain_blocker_snapshot or None,
+                    )
                 candidates = _targets_in_segment(
                     match,
                     effect.owner_id,
@@ -839,7 +1142,17 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
                 # 命中標記不應改變飛刃下一幀的實際飛行位置。
                 effect.position = current.copy()
                 effect.previous_position = previous.copy()
-                if not effect.returning and effect.distance_travelled >= effect.max_distance - 0.001:
+                if not effect.returning and effect.metadata.get("terrain_blocked"):
+                    effect.max_distance = effect.distance_travelled
+                    effect.returning = True
+                    effect.metadata.pop("terrain_blocked", None)
+                    effect.direction = (owner.position - effect.position).normalized()
+                    effect.hit_target_ids.clear()
+                elif effect.returning and effect.metadata.get("terrain_blocked"):
+                    if effect.remaining > 0:
+                        retained.append(effect)
+                    continue
+                elif not effect.returning and effect.distance_travelled >= effect.max_distance - 0.001:
                     effect.returning = True
                     effect.direction = (owner.position - effect.position).normalized()
                     effect.hit_target_ids.clear()
@@ -849,7 +1162,23 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
                     retained.append(effect)
                 continue
 
-            previous, current = _advance_projectile(effect, delta_time)
+            if effect.metadata.get("terrain_blocked"):
+                if effect.kind == "mine" and not effect.armed:
+                    effect.max_distance = effect.distance_travelled
+                    previous = effect.position.copy()
+                    current = effect.position.copy()
+                elif effect.remaining > 0:
+                    retained.append(effect)
+                    continue
+                else:
+                    continue
+            else:
+                previous, current = _advance_projectile(
+                    effect,
+                    delta_time,
+                    match.obstacles,
+                    effect.terrain_blocker_snapshot or None,
+                )
             candidates = _targets_in_segment(
                 match,
                 effect.owner_id,
@@ -864,6 +1193,7 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
                     effect.armed = True
                     effect.projectile_speed = 0.0
                     effect.metadata["armed"] = 1
+                    effect.metadata.pop("terrain_blocked", None)
                 else:
                     if effect.remaining > 0:
                         retained.append(effect)
@@ -915,6 +1245,7 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
                 continue
             effect.position = owner.position.copy()
             effect.direction = owner.aim_direction.normalized() if owner.aim_direction.length() else effect.direction
+            mark_player_attack(owner)
             effect.remaining -= delta_time
             effect.tick_timer -= delta_time
             while effect.tick_timer <= 0 and effect.remaining > 0:
@@ -927,7 +1258,15 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
                     range=effect.max_distance,
                     metadata={"primary_scaling": 1},
                 )
-                for _, target_kind, target_id in _targets_in_line(match, effect.owner_id, effect.position, effect.direction, effect.max_distance, 16.0):
+                for _, target_kind, target_id in _targets_in_line(
+                    match,
+                    effect.owner_id,
+                    effect.position,
+                    effect.direction,
+                    effect.max_distance,
+                    16.0,
+                    obstacles=match.obstacles,
+                ):
                     apply_damage(match, effect.owner_id, target_kind, target_id, _scaled_action_damage(match, beam_action, target_kind, target_id))
                 effect.tick_timer += float(effect.metadata.get("tick", 0.15))
             if effect.remaining > 0:
@@ -949,8 +1288,128 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
     match.effects = retained
 
 
+def _spawn_monster_projectile(
+    match: MatchState,
+    monster: MonsterState,
+    target: PlayerState,
+) -> None:
+    definition = get_monster_definition(monster.monster_type)
+    direction = (target.position - monster.position).normalized()
+    if not direction.length() or definition.projectile_speed <= 0.0:
+        return
+    start = monster.position + direction * (monster.radius + 2.0)
+    match.monster_projectiles.append(
+        MonsterProjectileState(
+            projectile_id=match.next_monster_projectile_id,
+            source_monster_id=monster.monster_id,
+            position=start.copy(),
+            previous_position=start.copy(),
+            direction=direction,
+            damage=definition.attack_damage,
+            projectile_speed=definition.projectile_speed,
+            radius=definition.projectile_radius,
+            max_distance=definition.projectile_range,
+            remaining=definition.projectile_range / max(definition.projectile_speed, 0.001) + 0.25,
+        )
+    )
+    match.next_monster_projectile_id += 1
+
+
+def _monster_projectile_impact(
+    match: MatchState,
+    projectile: MonsterProjectileState,
+    target: PlayerState,
+    impact_position: Vector2,
+) -> None:
+    target_was_invulnerable = target.invulnerability_timer > 0.0
+    target_shield_before = target.shield_remaining
+    event = apply_damage(match, None, "player", target.player_id, projectile.damage)
+    effective_damage = event.effective_damage if event is not None else 0.0
+    projectile.position = impact_position.copy()
+    projectile.impact_position = impact_position.copy()
+    projectile.impact_target_id = target.player_id
+    projectile.impact_status = (
+        "命中"
+        if effective_damage > 0.0
+        else "免傷"
+        if target_was_invulnerable
+        else "護盾"
+        if target_shield_before > 0.0
+        else "無效"
+    )
+    projectile.remaining = 0.14
+
+
+def _update_monster_projectiles(match: MatchState, delta_time: float) -> None:
+    """更新射手怪物的慢速子彈，讓飛行路徑可被玩家讀取與閃避。"""
+
+    retained: list[MonsterProjectileState] = []
+    dt = max(0.0, delta_time)
+    living_monster_ids = {monster.monster_id for monster in match.monsters if monster.alive}
+    for projectile in match.monster_projectiles:
+        if projectile.source_monster_id not in living_monster_ids:
+            continue
+        if projectile.impact_position is not None:
+            projectile.remaining -= dt
+            if projectile.remaining > 0.0:
+                retained.append(projectile)
+            continue
+
+        projectile.remaining -= dt
+        previous = projectile.position.copy()
+        projectile.previous_position = previous.copy()
+        remaining_distance = max(0.0, projectile.max_distance - projectile.distance_travelled)
+        step_distance = min(projectile.projectile_speed * dt, remaining_distance)
+        current = clamp_position(
+            previous + projectile.direction * step_distance,
+            max(0.0, projectile.radius),
+        )
+        terrain_hit = first_obstacle_on_segment(
+            previous,
+            current,
+            match.obstacles,
+            projectile.radius,
+        )
+        wall_distance = actual_distance = previous.distance_to(current)
+        if terrain_hit.blocked:
+            current = terrain_hit.position.copy()
+            wall_distance = previous.distance_to(current)
+        actual_distance = previous.distance_to(current)
+        projectile.position = current.copy()
+        projectile.distance_travelled += actual_distance
+
+        candidates: list[tuple[float, PlayerState]] = []
+        direction = (current - previous).normalized()
+        for target in match.players:
+            if not target.alive:
+                continue
+            projection = (target.position - previous).dot(direction) if direction.length() else 0.0
+            if (
+                -target.radius <= projection <= actual_distance + target.radius
+                and projection <= wall_distance + target.radius
+                and distance_to_segment(target.position, previous, current)
+                <= projectile.radius + target.radius
+            ):
+                candidates.append((projection, target))
+        if candidates:
+            projection, target = min(candidates, key=lambda item: (item[0], item[1].player_id))
+            impact = _segment_impact_position(previous, current, projection)
+            _monster_projectile_impact(match, projectile, target, impact)
+            retained.append(projectile)
+            continue
+        if terrain_hit.blocked:
+            projectile.impact_position = current.copy()
+            projectile.impact_status = "牆"
+            projectile.remaining = 0.14
+            retained.append(projectile)
+            continue
+        if projectile.distance_travelled < projectile.max_distance - 0.001 and projectile.remaining > 0.0:
+            retained.append(projectile)
+    match.monster_projectiles = retained
+
+
 def update_monsters(match: MatchState, delta_time: float) -> None:
-    """更新近戰怪物追擊、接觸傷害與固定延遲重生。"""
+    """更新三種怪物的追擊、保持射程、攻擊與固定延遲重生。"""
 
     dt = max(0.0, delta_time)
     for monster in match.monsters:
@@ -964,24 +1423,60 @@ def update_monsters(match: MatchState, delta_time: float) -> None:
                 monster.target_player_id = None
                 monster.attack_timer = 0.0
                 monster.last_damage_player_id = None
+                monster.aim_direction = Vector2(1.0, 0.0)
                 clear_monster_effects(monster)
+                match.monster_projectiles = [
+                    projectile
+                    for projectile in match.monster_projectiles
+                    if projectile.source_monster_id != monster.monster_id
+                ]
             continue
         living_players = [player for player in match.players if player.alive]
         if not living_players:
             continue
+
         target = min(living_players, key=lambda player: monster.position.distance_to(player.position))
         monster.target_player_id = target.player_id
         offset = target.position - monster.position
         distance = offset.length()
-        if distance > monster.radius + target.radius and monster.root_timer <= 0:
-            monster.position = clamp_position(
-                monster.position + offset.normalized() * monster.move_speed * dt * monster.slow_multiplier,
-                monster.radius,
-            )
+        definition = get_monster_definition(monster.monster_type)
         monster.attack_timer -= dt
-        if monster.position.distance_to(target.position) <= monster.radius + target.radius and monster.attack_timer <= 0:
-            apply_damage(match, None, "player", target.player_id, config.MONSTER_CONTACT_DAMAGE)
-            monster.attack_timer = config.MONSTER_ATTACK_INTERVAL
+
+        if monster.root_timer <= 0.0 and distance > 0.0:
+            if monster.monster_type == MonsterType.SHOOTER:
+                if distance > definition.preferred_range + 36.0:
+                    move_direction = offset.normalized()
+                elif distance < max(0.0, definition.preferred_range - 36.0):
+                    move_direction = (offset * -1.0).normalized()
+                else:
+                    move_direction = Vector2()
+            else:
+                move_direction = offset.normalized() if distance > monster.radius + target.radius else Vector2()
+            if move_direction.length():
+                monster.aim_direction = move_direction.copy()
+                movement = move_direction * monster.move_speed * dt * monster.slow_multiplier
+                monster.position = move_circle_with_obstacles(
+                    monster.position,
+                    movement,
+                    monster.radius,
+                    match.obstacles,
+                )
+                monster.position = clamp_position(monster.position, monster.radius)
+
+        distance_after_move = monster.position.distance_to(target.position)
+        if monster.monster_type == MonsterType.SHOOTER:
+            if distance_after_move <= definition.attack_range and monster.attack_timer <= 0.0:
+                aim_direction = (target.position - monster.position).normalized()
+                if aim_direction.length():
+                    monster.aim_direction = aim_direction
+                _spawn_monster_projectile(match, monster, target)
+                monster.attack_timer = definition.attack_interval
+        elif (
+            distance_after_move <= monster.radius + target.radius
+            and monster.attack_timer <= 0.0
+        ):
+            apply_damage(match, None, "player", target.player_id, definition.attack_damage)
+            monster.attack_timer = definition.attack_interval
 
 
 def _remove_dead_player_effects(match: MatchState) -> None:
@@ -1017,6 +1512,10 @@ def _update_player_lifecycle(match: MatchState, delta_time: float) -> None:
     for player in match.players:
         update_player_timers(player, delta_time)
         if not player.alive:
+            if player.death_timer <= 0.0:
+                # 外部測試／開發者可以用 alive=False 暫時停用目標；沒有倒數
+                # 時不應在下一幀被誤當成已完成重生。
+                continue
             player.death_timer = max(0.0, player.death_timer - delta_time)
             if player.death_timer <= 0:
                 respawn_player(player, player.spawn_position)
@@ -1038,6 +1537,13 @@ def _recover_player_ammo(
             definition.ammo_recovery_interval,
             blocked=primary_attack_active(player, input_state.primary_held),
         )
+
+
+def _recover_player_health(match: MatchState, delta_time: float) -> None:
+    """在本幀所有受擊結算後統一處理戰鬥外生命恢復。"""
+
+    for player in match.players:
+        regenerate_player_health(player, delta_time)
 
 
 def _cast_requested(input_state: InputState, slot: str) -> bool:
@@ -1063,17 +1569,43 @@ def _remove_siphoner_beam(match: MatchState, player_id: int) -> None:
     ]
 
 
+def _resolve_human_aim(
+    match: MatchState,
+    player: PlayerState,
+    ability_slot: str,
+    manual_direction: Vector2,
+):
+    """在施放端使用與畫面預覽相同的歷史位置自動瞄準結果。"""
+
+    result = resolve_auto_aim(
+        match,
+        player,
+        ability_slot,
+        manual_direction,
+        obstacles=match.obstacles,
+    )
+    player.aim_direction = result.direction
+    return result
+
+
 def _handle_human_actions(match: MatchState, human_input: InputState, delta_time: float) -> None:
     if not match.players:
         return
     player = match.players[0]
+    if human_input.auto_aim_toggle_pressed:
+        player.auto_aim_enabled = not player.auto_aim_enabled
     if not player.alive:
         player.ability_input_blocked = True
         player.primary_charge = 0.0
         _remove_siphoner_beam(match, player.player_id)
         return
-    player.aim_direction = human_input.aim_direction.normalized() if human_input.aim_direction.length() else player.aim_direction
-    update_player_movement(player, human_input.move_direction, delta_time)
+    manual_direction = (
+        human_input.aim_direction.normalized()
+        if human_input.aim_direction.length()
+        else player.aim_direction
+    )
+    player.aim_direction = manual_direction
+    update_player_movement(player, human_input.move_direction, delta_time, match.obstacles)
     if human_input.focus_lost:
         player.ability_input_blocked = True
         player.primary_charge = 0.0
@@ -1090,10 +1622,12 @@ def _handle_human_actions(match: MatchState, human_input: InputState, delta_time
     definition = get_character_definition(player.character_id)
     if player.character_id == CharacterId.SNIPER:
         if human_input.primary_held:
+            _resolve_human_aim(match, player, "primary", manual_direction)
             charge_limit = float(definition.parameters.get("charge", 0.6))
             player.primary_charge = min(charge_limit, player.primary_charge + delta_time)
         elif _cast_requested(human_input, "primary"):
-            action = create_primary_action(player, player.aim_direction, player.primary_charge)
+            aim = _resolve_human_aim(match, player, "primary", manual_direction)
+            action = create_primary_action(player, aim.direction, player.primary_charge, aim.target_distance)
             if action is not None:
                 action.metadata["primary_scaling"] = 1
                 _apply_action(match, action)
@@ -1104,22 +1638,29 @@ def _handle_human_actions(match: MatchState, human_input: InputState, delta_time
         has_beam = any(effect.owner_id == player.player_id and effect.kind == "beam" for effect in match.effects)
         if not human_input.primary_held:
             _remove_siphoner_beam(match, player.player_id)
-        elif not has_beam:
-            action = create_primary_action(player, player.aim_direction)
+        else:
+            aim = _resolve_human_aim(match, player, "primary", manual_direction)
+            if not has_beam:
+                action = create_primary_action(player, aim.direction, target_distance=aim.target_distance)
+            else:
+                action = None
             if action is not None:
                 action.metadata["primary_scaling"] = 1
                 _apply_action(match, action)
     elif _cast_requested(human_input, "primary"):
-        action = create_primary_action(player, player.aim_direction)
+        aim = _resolve_human_aim(match, player, "primary", manual_direction)
+        action = create_primary_action(player, aim.direction, target_distance=aim.target_distance)
         if action is not None:
             action.metadata["primary_scaling"] = 1
             _apply_action(match, action)
     if _cast_requested(human_input, "ultimate"):
-        action = create_ultimate_action(player, player.aim_direction)
+        aim = _resolve_human_aim(match, player, "ultimate", manual_direction)
+        action = create_ultimate_action(player, aim.direction, aim.target_distance)
         if action is not None:
             _apply_action(match, action)
     if _cast_requested(human_input, "tactical"):
-        action = create_tactical_action(player, player.aim_direction, human_input.move_direction)
+        aim = _resolve_human_aim(match, player, "tactical", manual_direction)
+        action = create_tactical_action(player, aim.direction, human_input.move_direction, aim.target_distance)
         if action is not None:
             _apply_action(match, action)
 
@@ -1129,6 +1670,10 @@ def update_world(match: MatchState, inputs: dict[int, InputState], delta_time: f
 
     if match.phase != MatchPhase.PLAYING:
         return
+    # 建局後第一幀才正式開始取樣；這也讓開發者／測試在開局前調整出生位置
+    # 時，不會被 create_match 當下的舊快照覆蓋。
+    if match.elapsed_time <= 0.0:
+        record_position_history(match, 0.0)
     previous_elapsed = max(0.0, min(match.duration, match.elapsed_time))
     if previous_elapsed >= match.duration:
         # 時間已經結束的狀態不應再接受一幀輸入；只補做一次最終勝負裁決。
@@ -1152,6 +1697,8 @@ def update_world(match: MatchState, inputs: dict[int, InputState], delta_time: f
     _handle_human_actions(match, inputs.get(0, InputState()), dt)
     _update_effects(match, inputs, dt)
     update_monsters(match, dt)
+    _update_monster_projectiles(match, dt)
+    _recover_player_health(match, dt)
     _recover_player_ammo(match, inputs, dt)
     _remove_dead_player_effects(match)
     extraction_active = match.elapsed_time >= match.extraction_start_time
@@ -1174,6 +1721,7 @@ def update_world(match: MatchState, inputs: dict[int, InputState], delta_time: f
         match.phase = MatchPhase.VICTORY
     else:
         resolve_match_timeout(match)
+    record_position_history(match)
     update_camera(match)
 
 

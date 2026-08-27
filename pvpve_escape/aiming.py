@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 
 from . import config
 from .characters import get_character_definition, get_tactical_definition
-from .models import AimGuide, CharacterId, PlayerState, TacticalId, Vector2
+from .models import AimGuide, CharacterId, ObstacleState, PlayerState, TacticalId, Vector2
+from .terrain import first_obstacle_on_segment, resolve_dash_path
 
 
 def _safe_direction(direction: Vector2) -> Vector2:
@@ -77,6 +79,43 @@ def _rotate(direction: Vector2, angle_degrees: float) -> Vector2:
     ).normalized()
 
 
+def _path_endpoint(
+    origin: Vector2,
+    direction: Vector2,
+    distance: float,
+    margin: float = 0.0,
+    obstacles: Iterable[ObstacleState] | None = None,
+) -> Vector2:
+    """建立和實際路徑相同的世界邊界／牆前端點。"""
+
+    bounded_end = clamp_aim_endpoint(origin, direction, distance, margin=margin)
+    if obstacles is None:
+        return bounded_end
+    return first_obstacle_on_segment(origin, bounded_end, obstacles, radius=margin).position
+
+
+def _dash_endpoint(
+    origin: Vector2,
+    direction: Vector2,
+    distance: float,
+    margin: float = 0.0,
+    obstacles: Iterable[ObstacleState] | None = None,
+) -> Vector2:
+    """預覽 DASH 破壞第一面薄牆後的剩餘路徑，不改寫比賽狀態。"""
+
+    if obstacles is None:
+        return clamp_aim_endpoint(origin, direction, distance, margin=margin)
+    endpoint, _, _, _ = resolve_dash_path(
+        origin,
+        direction,
+        distance,
+        margin,
+        obstacles,
+        allow_first_thin_break=True,
+    )
+    return endpoint
+
+
 def _guide(
     player: PlayerState,
     ability_slot: str,
@@ -111,6 +150,8 @@ def build_aim_guide(
     aim_direction: Vector2,
     valid: bool = True,
     move_direction: Vector2 | None = None,
+    range_override: float | None = None,
+    obstacles: Iterable[ObstacleState] | None = None,
 ) -> AimGuide:
     """依角色與技能欄位建立一份不會修改玩家狀態的預覽資料。
 
@@ -125,6 +166,11 @@ def build_aim_guide(
     origin = clamp_world_point(player.position)
     character = get_character_definition(player.character_id)
 
+    def effective_range(default: float) -> float:
+        if range_override is None or range_override <= 0.0:
+            return float(default)
+        return min(float(default), float(range_override))
+
     if slot == "primary":
         if player.character_id == CharacterId.BREACHER:
             distance = config.BREACH_CONE_RANGE
@@ -133,7 +179,7 @@ def build_aim_guide(
             divisor = max(1, pellet_count - 1)
             endpoints = tuple(
                 clamp_world_point(
-                    clamp_aim_endpoint(
+                    _path_endpoint(
                         origin,
                         _rotate(
                             direction,
@@ -141,6 +187,7 @@ def build_aim_guide(
                         ),
                         distance,
                         margin=config.BREACH_PELLET_RADIUS,
+                        obstacles=obstacles,
                     ),
                 )
                 for index in range(pellet_count)
@@ -157,54 +204,63 @@ def build_aim_guide(
                 valid=valid,
             )
         if player.character_id == CharacterId.SNIPER:
-            end = clamp_aim_endpoint(
+            end = _path_endpoint(
                 origin,
                 direction,
                 character.primary_range,
                 margin=config.SNIPER_PROJECTILE_RADIUS,
+                obstacles=obstacles,
             )
             return _guide(player, slot, "line", direction, end, range_distance=character.primary_range, valid=valid)
         if player.character_id == CharacterId.GUARDIAN:
-            end = clamp_aim_endpoint(origin, direction, character.primary_range)
+            end = _path_endpoint(origin, direction, character.primary_range, obstacles=obstacles)
             return _guide(player, slot, "wedge", direction, end, range_distance=character.primary_range, angle_degrees=100.0, valid=valid)
         if player.character_id == CharacterId.HUNTER:
-            end = clamp_aim_endpoint(
+            distance = effective_range(character.primary_range)
+            end = _path_endpoint(
                 origin,
                 direction,
-                character.primary_range,
+                distance,
                 margin=config.BOOMERANG_PROJECTILE_RADIUS,
+                obstacles=obstacles,
             )
-            return _guide(player, slot, "path", direction, end, range_distance=character.primary_range, path_points=(origin, end, origin), valid=valid)
+            return _guide(player, slot, "path", direction, end, range_distance=distance, path_points=(origin, end, origin), valid=valid)
         if player.character_id == CharacterId.CONTROLLER:
-            end = clamp_aim_endpoint(
+            distance = effective_range(character.primary_range)
+            end = _path_endpoint(
                 origin,
                 direction,
-                character.primary_range,
+                distance,
                 margin=config.MINE_PROJECTILE_RADIUS,
+                obstacles=obstacles,
             )
-            return _guide(player, slot, "circle", direction, end, range_distance=character.primary_range, radius=100.0, valid=valid)
-        end = clamp_aim_endpoint(origin, direction, character.primary_range)
+            return _guide(player, slot, "circle", direction, end, range_distance=distance, radius=100.0, valid=valid)
+        end = _path_endpoint(origin, direction, character.primary_range, obstacles=obstacles)
         return _guide(player, slot, "beam", direction, end, range_distance=character.primary_range, valid=valid)
 
     if slot == "ultimate":
         if player.character_id == CharacterId.BREACHER:
             return _guide(player, slot, "circle", direction, origin, radius=190.0, valid=valid)
         if player.character_id == CharacterId.SNIPER:
-            end = clamp_aim_endpoint(origin, direction, 1100.0)
+            end = _path_endpoint(origin, direction, 1100.0, obstacles=obstacles)
             return _guide(player, slot, "line", direction, end, range_distance=1100.0, valid=valid)
         if player.character_id == CharacterId.GUARDIAN:
             return _guide(player, slot, "circle", direction, origin, radius=38.0, valid=valid)
         if player.character_id == CharacterId.HUNTER:
-            end = clamp_aim_endpoint(
+            distance = effective_range(360.0)
+            end = _path_endpoint(
                 origin,
                 direction,
-                360.0,
+                distance,
                 margin=config.PLAYER_RADIUS,
+                obstacles=obstacles,
             )
-            return _guide(player, slot, "path", direction, end, range_distance=360.0, path_points=(origin, end), valid=valid)
+            return _guide(player, slot, "path", direction, end, range_distance=distance, path_points=(origin, end), valid=valid)
         if player.character_id == CharacterId.CONTROLLER:
-            end = clamp_aim_endpoint(origin, direction, 220.0)
-            return _guide(player, slot, "circle", direction, end, radius=190.0, valid=valid)
+            distance = effective_range(220.0)
+            end = _path_endpoint(origin, direction, distance, obstacles=obstacles)
+            preview_range = distance if range_override is not None and range_override > 0.0 else 0.0
+            return _guide(player, slot, "circle", direction, end, range_distance=preview_range, radius=190.0, valid=valid)
         return _guide(player, slot, "circle", direction, origin, radius=220.0, valid=valid)
 
     tactical = get_tactical_definition(player.tactical_id)
@@ -212,15 +268,16 @@ def build_aim_guide(
         if move_direction is not None and move_direction.length():
             direction = _safe_direction(move_direction)
         distance = float(tactical.parameters.get("distance", 220.0))
-        end = clamp_aim_endpoint(
+        end = _dash_endpoint(
             origin,
             direction,
             distance,
             margin=config.PLAYER_RADIUS,
+            obstacles=obstacles,
         )
         return _guide(player, slot, "path", direction, end, range_distance=distance, path_points=(origin, end), valid=valid)
     if player.tactical_id == TacticalId.SHIELD:
         return _guide(player, slot, "circle", direction, origin, radius=36.0, valid=valid)
-    distance = float(tactical.parameters.get("radius", 100.0))
-    end = clamp_aim_endpoint(origin, direction, distance)
+    distance = effective_range(float(tactical.parameters.get("radius", 100.0)))
+    end = _path_endpoint(origin, direction, distance, obstacles=obstacles)
     return _guide(player, slot, "circle", direction, end, range_distance=distance, radius=100.0, valid=valid)

@@ -6,6 +6,7 @@ from . import config
 from .models import (
     AbilityEffect,
     CircleZone,
+    CombatAction,
     DamageEvent,
     MatchPhase,
     MatchState,
@@ -14,6 +15,15 @@ from .models import (
     PlayerStatus,
     Vector2,
 )
+
+
+_NON_ATTACK_ACTION_KINDS = {"tactical_dash", "tactical_shield", "guardian_guard"}
+
+
+def action_counts_as_attack(action: CombatAction) -> bool:
+    """判斷已成立的動作是否應阻止戰鬥外生命恢復。"""
+
+    return action.kind not in _NON_ATTACK_ACTION_KINDS
 
 
 def is_visual_only_effect(effect: AbilityEffect) -> bool:
@@ -109,19 +119,51 @@ def consume_ammo(player: PlayerState) -> bool:
     return True
 
 
+def mark_player_hit(player: PlayerState) -> None:
+    """重置存活玩家的受擊計時；護盾、免傷與減傷命中也算受擊。"""
+
+    if player.alive:
+        player.last_damage_time = 0.0
+
+
+def mark_player_attack(player: PlayerState) -> None:
+    """重置玩家攻擊計時；只由已成立的攻擊動作呼叫。"""
+
+    if player.alive:
+        player.last_attack_time = 0.0
+
+
+def regenerate_player_health(player: PlayerState, delta_time: float) -> float:
+    """脫離攻擊與受擊五秒後，按最大生命值比例恢復生命。"""
+
+    if not player.alive or player.health >= player.max_health:
+        return player.health
+    if (
+        player.last_damage_time < config.PLAYER_REGEN_DELAY
+        or player.last_attack_time < config.PLAYER_REGEN_DELAY
+    ):
+        return player.health
+    recovery = player.max_health * config.PLAYER_REGEN_RATE * max(0.0, delta_time)
+    player.health = min(player.max_health, player.health + recovery)
+    return player.health
+
+
 def apply_damage_to_player(player: PlayerState, raw_damage: float) -> float:
     """套用免疫、護盾與減傷後扣除生命，回傳實際傷害。"""
 
-    if not player.alive or player.invulnerability_timer > 0:
+    if not player.alive:
         return 0.0
     incoming = max(0.0, raw_damage)
+    if incoming > 0.0:
+        mark_player_hit(player)
+    if player.invulnerability_timer > 0:
+        return 0.0
     if player.shield_remaining > 0:
         absorbed = min(player.shield_remaining, incoming)
         player.shield_remaining -= absorbed
         incoming -= absorbed
     effective_damage = incoming * max(0.0, 1.0 - player.damage_reduction)
     player.health = max(0.0, player.health - effective_damage)
-    player.last_damage_time = 0.0
     if player.health <= 0:
         handle_player_death(player)
     return effective_damage
@@ -192,6 +234,8 @@ def handle_player_death(player: PlayerState) -> None:
     player.ability_input_blocked = True
     player.ammo = 0
     player.ammo_recovery_timer = 0.0
+    player.last_damage_time = 0.0
+    player.last_attack_time = 0.0
     player.max_health = player.base_max_health * player.health_passive_multiplier
     clear_player_effects(player)
 
@@ -209,6 +253,8 @@ def respawn_player(player: PlayerState, spawn_position: Vector2) -> None:
     player.health = player.max_health
     player.ammo = player.ammo_capacity
     player.ammo_recovery_timer = 0.0
+    player.last_damage_time = 0.0
+    player.last_attack_time = 0.0
     player.primary_cooldown = 0.0
     player.tactical_cooldown = 0.0
     player.extraction_progress = 0.0
@@ -229,7 +275,13 @@ def update_player_timers(player: PlayerState, delta_time: float) -> None:
     player.shield_timer = max(0.0, player.shield_timer - dt)
     player.slow_timer = max(0.0, player.slow_timer - dt)
     player.root_timer = max(0.0, player.root_timer - dt)
-    player.last_damage_time += dt
+    if player.alive:
+        player.last_damage_time += dt
+        player.last_attack_time += dt
+    else:
+        # 死亡生命週期不保留上一條命的脫戰時間，重生時也從零開始。
+        player.last_damage_time = 0.0
+        player.last_attack_time = 0.0
     if player.damage_reduction_timer <= 0:
         player.damage_reduction = 0.0
     if player.shield_timer <= 0:
@@ -241,6 +293,9 @@ def update_player_timers(player: PlayerState, delta_time: float) -> None:
 def apply_slow(player: PlayerState | MonsterState, multiplier: float, duration: float) -> None:
     """保留較強的減速效果，避免短效果覆蓋長效果。"""
 
+    if isinstance(player, PlayerState) and duration > 0.0:
+        # 敵方控場命中即算受擊，即使該效果沒有直接扣血。
+        mark_player_hit(player)
     player.slow_multiplier = min(player.slow_multiplier, max(0.0, min(1.0, multiplier)))
     player.slow_timer = max(player.slow_timer, max(0.0, duration))
 
