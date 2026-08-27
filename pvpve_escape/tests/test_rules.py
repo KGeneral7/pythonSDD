@@ -267,6 +267,37 @@ class CombatRuleTests(unittest.TestCase):
         update_player_timers(player, 12.0)
         self.assertIsNotNone(create_tactical_action(player, Vector2(1, 0), Vector2(1, 0)))
 
+    def test_tactical_cooldown_is_preserved_and_frozen_while_dead(self) -> None:
+        for _ in range(20):
+            match = create_match()
+            match.monsters = []
+            player = match.players[0]
+            player.tactical_cooldown = 7.5
+
+            handle_player_death(player)
+            self.assertFalse(player.alive)
+            self.assertEqual(player.tactical_cooldown, 7.5)
+
+            for _ in range(20):
+                update_world(match, {0: InputState()}, 0.05)
+            self.assertFalse(player.alive)
+            self.assertEqual(player.tactical_cooldown, 7.5)
+
+            for _ in range(79):
+                update_world(match, {0: InputState()}, 0.05)
+            self.assertFalse(player.alive)
+            self.assertEqual(player.tactical_cooldown, 7.5)
+
+            for _ in range(5):
+                update_world(match, {0: InputState()}, 0.05)
+                if player.alive:
+                    break
+            self.assertTrue(player.alive)
+            self.assertEqual(player.tactical_cooldown, 7.5)
+
+            update_player_timers(player, 2.0)
+            self.assertAlmostEqual(player.tactical_cooldown, 5.5)
+
     def test_monster_respawns_after_fixed_delay(self) -> None:
         match = create_match()
         monster = match.monsters[0]

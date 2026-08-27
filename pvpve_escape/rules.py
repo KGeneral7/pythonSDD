@@ -229,7 +229,6 @@ def handle_player_death(player: PlayerState) -> None:
     player.ultimate_energy = 0.0
     player.extraction_progress = 0.0
     player.death_timer = config.RESPAWN_DELAY
-    player.tactical_cooldown = 0.0
     player.primary_cooldown = 0.0
     player.ability_input_blocked = True
     player.ammo = 0
@@ -256,7 +255,6 @@ def respawn_player(player: PlayerState, spawn_position: Vector2) -> None:
     player.last_damage_time = 0.0
     player.last_attack_time = 0.0
     player.primary_cooldown = 0.0
-    player.tactical_cooldown = 0.0
     player.extraction_progress = 0.0
     # 重生後仍需等到上一個按鍵真正放開，避免死亡期間持續按住的
     # 普攻／大招／配件在重生同幀自動重播。
@@ -265,11 +263,12 @@ def respawn_player(player: PlayerState, spawn_position: Vector2) -> None:
 
 
 def update_player_timers(player: PlayerState, delta_time: float) -> None:
-    """更新所有玩家短計時器；死亡倒數由 respawn_player 的呼叫端處理。"""
+    """更新玩家短計時器；死亡時配件冷卻凍結，死亡倒數另由呼叫端處理。"""
 
     dt = max(0.0, delta_time)
     player.primary_cooldown = max(0.0, player.primary_cooldown - dt)
-    player.tactical_cooldown = max(0.0, player.tactical_cooldown - dt)
+    if player.alive:
+        player.tactical_cooldown = max(0.0, player.tactical_cooldown - dt)
     player.invulnerability_timer = max(0.0, player.invulnerability_timer - dt)
     player.damage_reduction_timer = max(0.0, player.damage_reduction_timer - dt)
     player.shield_timer = max(0.0, player.shield_timer - dt)

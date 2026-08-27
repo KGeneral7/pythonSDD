@@ -9,11 +9,10 @@ import pygame
 from . import config
 from .aiming import build_aim_guide
 from .auto_aim import AutoAimResult, resolve_auto_aim
-from .characters import get_character_definition, get_tactical_definition
+from .characters import get_character_definition
 from .controllers import InputState
 from .models import AimGuide, AbilityEffect, CharacterId, MatchPhase, MatchState, MonsterType, PlayerState, TacticalId, Vector2
 from .monsters import get_monster_definition
-from .rules import primary_attack_active
 from .terrain import is_player_visible_to_viewer
 from .world import world_to_screen
 
@@ -42,6 +41,19 @@ _PRIMARY_EFFECT_LABELS = {
     "mine": "重力地雷",
     "beam": "吸能光束",
 }
+
+# 頭頂 HUD 的所有元素都使用同一個螢幕錨點；寬度與邊界集中管理，
+# 讓角色靠近視窗邊緣時只夾取當幀的資訊區塊，不會把資訊搬回固定角落。
+_OVERHEAD_MAX_WIDTH = 240
+_OVERHEAD_VIEWPORT_MARGIN = 8
+_OVERHEAD_PRIVATE_ROW_WIDTH = _OVERHEAD_MAX_WIDTH
+_OVERHEAD_IDENTITY_Y_OFFSET = -82
+_OVERHEAD_HEALTH_BAR_Y_OFFSET = -62
+_OVERHEAD_HEALTH_TEXT_Y_OFFSET = -50
+_OVERHEAD_PRIVATE_ROW_Y_OFFSET = -36
+_OVERHEAD_PRIVATE_ROW_HEIGHT = 24
+_OVERHEAD_MAX_AMMO_SEGMENTS = 8
+_DEATH_COUNTDOWN_FONT_SIZE = 56
 
 
 def _supports_traditional_chinese(font_path: str) -> bool:
@@ -142,6 +154,56 @@ def draw_text(
     surface.blit(image, rect)
 
 
+def _truncate_text_to_width(text: str, size: int, max_width: int) -> str:
+    """以目前遊戲字型將文字縮到指定寬度，超出時保留省略號。"""
+
+    if max_width <= 0:
+        return ""
+    font = _get_text_font(size)
+    if font.size(text)[0] <= max_width:
+        return text
+    ellipsis = "…"
+    if font.size(ellipsis)[0] > max_width:
+        return ""
+    shortened = text
+    while shortened and font.size(shortened + ellipsis)[0] > max_width:
+        shortened = shortened[:-1]
+    return shortened + ellipsis
+
+
+def _overhead_width(surface: pygame.Surface, width: int = _OVERHEAD_MAX_WIDTH) -> int:
+    """將頭頂資訊寬度限制在視窗可用範圍內。"""
+
+    available_width = max(1, surface.get_width() - _OVERHEAD_VIEWPORT_MARGIN * 2)
+    return min(max(1, int(width)), available_width)
+
+
+def _overhead_left(surface: pygame.Surface, center_x: int, width: int = _OVERHEAD_MAX_WIDTH) -> int:
+    """回傳符合視窗左右邊界的頭頂資訊區塊左緣。"""
+
+    viewport_left = _OVERHEAD_VIEWPORT_MARGIN
+    viewport_right = max(viewport_left, surface.get_width() - _OVERHEAD_VIEWPORT_MARGIN)
+    safe_width = _overhead_width(surface, width)
+    maximum_left = max(viewport_left, viewport_right - safe_width)
+    desired_left = round(center_x - safe_width / 2)
+    return max(viewport_left, min(maximum_left, desired_left))
+
+
+def _overhead_vertical_shift(surface: pygame.Surface, center_y: int) -> int:
+    """將頭頂資訊整組限制在視窗上下邊界內，仍保留玩家作為錨點。"""
+
+    identity_half_height = _get_text_font(14).get_height() // 2
+    block_top = center_y + _OVERHEAD_IDENTITY_Y_OFFSET - identity_half_height
+    block_bottom = center_y + _OVERHEAD_PRIVATE_ROW_Y_OFFSET + _OVERHEAD_PRIVATE_ROW_HEIGHT
+    viewport_top = _OVERHEAD_VIEWPORT_MARGIN
+    viewport_bottom = surface.get_height() - _OVERHEAD_VIEWPORT_MARGIN
+    if block_top < viewport_top:
+        return viewport_top - block_top
+    if block_bottom > viewport_bottom:
+        return viewport_bottom - block_bottom
+    return 0
+
+
 def _speed_label(player_or_definition: PlayerState | object) -> str:
     definition = (
         get_character_definition(player_or_definition.character_id)
@@ -151,6 +213,17 @@ def _speed_label(player_or_definition: PlayerState | object) -> str:
     if definition.projectile_speed <= 0:
         return "近戰" if definition.character_id == CharacterId.GUARDIAN else "引導"
     return f"{definition.projectile_speed:.0f}"
+
+
+def _selection_attack_hint(definition: object) -> str:
+    """由既有角色定義推導選角頁的普攻操作提示。"""
+
+    if definition.character_id == CharacterId.SNIPER:
+        charge_time = definition.parameters.get("charge", 0.6)
+        return f"普攻：按住左鍵蓄力 {charge_time:.1f}s，放開射擊"
+    if definition.character_id == CharacterId.SIPHONER:
+        return "普攻：按住左鍵持續引導吸能，放開停止"
+    return "普攻：左鍵瞄準後施放"
 
 
 def draw_selection(
@@ -165,8 +238,9 @@ def draw_selection(
 
     draw_text(surface, "PvPvE 中央撤離競技", (config.WINDOW_WIDTH // 2, 48), 42, config.ACCENT_COLOR, True)
     draw_text(surface, "按 1～6 選擇角色，Q/W/E 選擇配件，Enter 開始，I 查看玩法", (config.WINDOW_WIDTH // 2, 88), 24, config.MUTED_TEXT_COLOR, True)
+    draw_text(surface, "操作：左鍵普攻｜右鍵大招｜Space 配件", (config.WINDOW_WIDTH // 2, 112), 20, config.WARNING_COLOR, True)
     definitions = get_all_character_definitions()
-    card_width, card_height = 280, 126
+    card_width, card_height = 280, 142
     for index, definition in enumerate(definitions):
         column = index % 3
         row = index // 3
@@ -196,6 +270,13 @@ def draw_selection(
             pellet_text = "/0.15s"
         draw_text(surface, f"生命 {definition.base_health:.0f}｜火力 {definition.primary_damage:.0f}{pellet_text}", (rect.x + 14, rect.y + 76), 17, config.TEXT_COLOR)
         draw_text(surface, f"射程 {definition.primary_range:.0f}｜速度 {_speed_label(definition)}", (rect.x + 14, rect.y + 99), 17, config.TEXT_COLOR)
+        draw_text(
+            surface,
+            _truncate_text_to_width(_selection_attack_hint(definition), 14, card_width - 28),
+            (rect.x + 14, rect.y + 121),
+            14,
+            config.MUTED_TEXT_COLOR,
+        )
     tactics = get_all_tactical_definitions()
     draw_text(surface, "戰術配件", (70, 470), 28, config.WARNING_COLOR)
     for index, definition in enumerate(tactics):
@@ -210,6 +291,13 @@ def draw_selection(
         )
         draw_text(surface, f"{('Q', 'W', 'E')[index]}  {definition.display_name}", (rect.x + 14, rect.y + 12), 24, config.WARNING_COLOR if selected else config.TEXT_COLOR)
         draw_text(surface, f"冷卻 {definition.cooldown:.0f}s", (rect.x + 14, rect.y + 46), 18, config.MUTED_TEXT_COLOR)
+        draw_text(
+            surface,
+            _truncate_text_to_width(definition.description, 13, rect.width - 28),
+            (rect.x + 14, rect.y + 68),
+            13,
+            config.TEXT_COLOR,
+        )
     draw_text(surface, "假玩家固定不移動、不攻擊；可在比賽中使用 F1 開發者測試。", (70, 655), 20, config.MUTED_TEXT_COLOR)
 
 
@@ -385,12 +473,138 @@ def _draw_health_bar(
         pygame.draw.rect(surface, health_color, (bar.x + 1, bar.y + 1, max(1, round((bar.width - 2) * ratio)), bar.height - 2))
 
 
-def _draw_player_overlay(surface: pygame.Surface, player: PlayerState, point: tuple[int, int]) -> None:
+def _draw_ammo_segments(
+    surface: pygame.Surface,
+    left: int,
+    top: int,
+    ammo: int,
+    capacity: int,
+) -> None:
+    """繪製固定寬度、可辨識空格的彈藥分段。"""
+
+    safe_capacity = max(0, min(_OVERHEAD_MAX_AMMO_SEGMENTS, int(capacity)))
+    safe_ammo = max(0, min(safe_capacity, int(ammo)))
+    if safe_capacity == 0:
+        return
+    segment_gap = 2
+    segment_width = max(3, (56 - segment_gap * (safe_capacity - 1)) // safe_capacity)
+    for index in range(safe_capacity):
+        rect = pygame.Rect(left + index * (segment_width + segment_gap), top, segment_width, 10)
+        if index < safe_ammo:
+            pygame.draw.rect(surface, config.ACCENT_COLOR, rect)
+        else:
+            pygame.draw.rect(surface, config.PANEL_BORDER_COLOR, rect, 1)
+
+
+def _safe_display_float(value: float, minimum: float, maximum: float) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = minimum
+    if not math.isfinite(numeric):
+        numeric = minimum
+    return max(minimum, min(maximum, numeric))
+
+
+def _draw_player_overlay(
+    surface: pygame.Surface,
+    player: PlayerState,
+    point: tuple[int, int],
+    show_private_info: bool = False,
+) -> None:
+    """繪製玩家頭頂公開資訊，並在觀看者為本人時追加私人戰鬥列。"""
+
     character = get_character_definition(player.character_id)
     label_color = config.PLAYER_COLORS[player.player_id % len(config.PLAYER_COLORS)] if player.alive else config.DANGER_COLOR
-    _draw_health_bar(surface, point, player.health, player.max_health, -34, 62)
-    draw_text(surface, f"{player.health:.0f}/{player.max_health:.0f}", (point[0], point[1] - 47), 13, config.TEXT_COLOR, True)
-    draw_text(surface, f"{player.player_id} {character.display_name}", (point[0], point[1] - 64), 14, label_color, True)
+    raw_max_health = _safe_display_float(player.max_health, 1.0, 1_000_000.0)
+    safe_health = _safe_display_float(player.health, 0.0, raw_max_health)
+    overhead_width = _overhead_width(surface, _OVERHEAD_PRIVATE_ROW_WIDTH)
+    overhead_left = _overhead_left(surface, point[0], overhead_width)
+    overhead_center = (
+        overhead_left + overhead_width // 2,
+        point[1] + _overhead_vertical_shift(surface, point[1]),
+    )
+    _draw_health_bar(
+        surface,
+        overhead_center,
+        safe_health,
+        raw_max_health,
+        _OVERHEAD_HEALTH_BAR_Y_OFFSET,
+        62,
+    )
+    identity = _truncate_text_to_width(
+        f"{player.player_id} {character.display_name}",
+        14,
+        overhead_width - 16,
+    )
+    draw_text(
+        surface,
+        identity,
+        (overhead_center[0], overhead_center[1] + _OVERHEAD_IDENTITY_Y_OFFSET),
+        14,
+        label_color,
+        True,
+    )
+    draw_text(
+        surface,
+        f"{safe_health:.0f}/{raw_max_health:.0f}",
+        (overhead_center[0], overhead_center[1] + _OVERHEAD_HEALTH_TEXT_Y_OFFSET),
+        13,
+        config.TEXT_COLOR,
+        True,
+    )
+
+    if not show_private_info:
+        return
+
+    private_row = pygame.Rect(
+        overhead_left,
+        overhead_center[1] + _OVERHEAD_PRIVATE_ROW_Y_OFFSET,
+        overhead_width,
+        _OVERHEAD_PRIVATE_ROW_HEIGHT,
+    )
+    draw_panel(
+        surface,
+        private_row,
+        fill_color=config.PANEL_COLOR,
+        border_color=config.PANEL_BORDER_COLOR,
+        border_width=1,
+        radius=6,
+    )
+    safe_capacity = max(0, min(_OVERHEAD_MAX_AMMO_SEGMENTS, int(player.ammo_capacity)))
+    safe_ammo = max(0, min(safe_capacity, int(player.ammo)))
+    _draw_ammo_segments(surface, overhead_left + 5, private_row.y + 7, safe_ammo, safe_capacity)
+    draw_text(
+        surface,
+        f"彈藥 {safe_ammo}/{safe_capacity}",
+        (overhead_left + 62, private_row.y + 5),
+        12,
+        config.TEXT_COLOR,
+    )
+    gadget_color = (
+        config.EXTRACTION_COLOR
+        if player.alive and player.tactical_cooldown <= 0.0
+        else config.PANEL_BORDER_COLOR
+    )
+    gadget_center = (overhead_left + 124, private_row.y + 12)
+    pygame.draw.circle(surface, gadget_color, gadget_center, 8)
+    pygame.draw.circle(surface, config.PANEL_COLOR, gadget_center, 4)
+    safe_energy = _safe_display_float(player.ultimate_energy, 0.0, config.MAX_ULTIMATE_ENERGY)
+    draw_text(
+        surface,
+        f"大招 {safe_energy:.0f}%",
+        (overhead_left + 134, private_row.y + 5),
+        12,
+        config.EXTRACTION_COLOR if safe_energy >= config.MAX_ULTIMATE_ENERGY else config.TEXT_COLOR,
+    )
+    safe_upgrade = max(0, min(config.MAX_UPGRADE_STACKS, int(player.upgrade_stacks)))
+    draw_text(
+        surface,
+        f"強化 {safe_upgrade}/{config.MAX_UPGRADE_STACKS}",
+        (overhead_left + 198, private_row.y + 5),
+        12,
+        config.WARNING_COLOR if safe_upgrade else config.TEXT_COLOR,
+    )
 
 
 def _draw_player_roster(surface: pygame.Surface, match: MatchState, viewer_id: int = 0) -> None:
@@ -412,6 +626,22 @@ def _draw_player_roster(surface: pygame.Surface, match: MatchState, viewer_id: i
         status = "存活" if player.alive else "重生中"
         draw_text(surface, f"{player.player_id} {character.display_name}", (center[0] + 14, center[1] - 10), 15, color)
         draw_text(surface, status, (center[0] + 14, center[1] + 7), 12, config.MUTED_TEXT_COLOR)
+
+
+def _draw_death_countdown(surface: pygame.Surface, player: PlayerState) -> None:
+    """以 Pygame 字型在觀看者本人死亡時顯示中央重生倒數。"""
+
+    if player.alive or player.death_timer <= 0.0:
+        return
+    remaining = _safe_display_float(player.death_timer, 0.0, config.RESPAWN_DELAY)
+    draw_text(
+        surface,
+        f"死亡倒數 {remaining:.1f}s",
+        surface.get_rect().center,
+        _DEATH_COUNTDOWN_FONT_SIZE,
+        config.DANGER_COLOR,
+        True,
+    )
 
 
 def _draw_directional_wedge(
@@ -1020,11 +1250,12 @@ def draw_world(
             continue
         point = _screen_point(match, player.position)
         color = config.PLAYER_COLORS[player.player_id % len(config.PLAYER_COLORS)]
+        show_private_info = player.player_id == viewer_id
         if not player.alive:
             pygame.draw.circle(surface, config.DANGER_COLOR, point, config.PLAYER_DRAW_RADIUS, 2)
             pygame.draw.line(surface, config.DANGER_COLOR, (point[0] - 9, point[1] - 9), (point[0] + 9, point[1] + 9), 2)
             pygame.draw.line(surface, config.DANGER_COLOR, (point[0] + 9, point[1] - 9), (point[0] - 9, point[1] + 9), 2)
-            _draw_player_overlay(surface, player, point)
+            _draw_player_overlay(surface, player, point, show_private_info=show_private_info)
             continue
         _draw_role_shape(surface, point, config.PLAYER_DRAW_RADIUS, color, player.character_id, player.aim_direction)
         if player.player_id == 0:
@@ -1033,7 +1264,7 @@ def draw_world(
         aim_end = player.position + player.aim_direction.normalized() * 26
         pygame.draw.line(surface, config.TEXT_COLOR, point, _screen_point(match, aim_end), 2)
         draw_text(surface, str(player.player_id), (point[0] - 4, point[1] - 8), 16, config.PANEL_COLOR)
-        _draw_player_overlay(surface, player, point)
+        _draw_player_overlay(surface, player, point, show_private_info=show_private_info)
         _draw_control_status(
             surface,
             point,
@@ -1098,78 +1329,12 @@ def draw_hud(
         (candidate for candidate in match.players if candidate.player_id == viewer_id),
         match.players[0],
     )
-    panel = pygame.Rect(16, 16, 470, 310)
-    draw_panel(surface, panel, radius=8)
-    from .characters import get_character_definition, get_tactical_definition
-
-    character = get_character_definition(player.character_id)
-    tactical = get_tactical_definition(player.tactical_id)
-    draw_text(surface, f"玩家 {player.player_id}｜{character.display_name}", (30, 27), 24, config.TEXT_COLOR)
-    draw_text(surface, f"生命 {player.health:.0f}/{player.max_health:.0f}", (30, 58), 20, config.TEXT_COLOR)
-    pellet_text = "×5" if player.character_id == CharacterId.BREACHER else "/0.15s" if player.character_id == CharacterId.SIPHONER else ""
-    draw_text(surface, f"普攻火力 {character.primary_damage:.0f}{pellet_text}｜射程 {character.primary_range:.0f}", (30, 84), 18, config.ACCENT_COLOR)
-    draw_text(surface, f"飛行速度 {_speed_label(player)}", (30, 108), 18, config.ACCENT_COLOR)
-    character_recovery_interval = max(0.001, character.ammo_recovery_interval)
-    primary_held = bool(input_state is not None and input_state.primary_held)
-    if primary_attack_active(player, primary_held):
-        ammo_status = "恢復暫停（普攻中）"
-    elif player.ammo >= player.ammo_capacity:
-        ammo_status = "彈匣已滿"
-    else:
-        next_round = max(0.0, character_recovery_interval - player.ammo_recovery_timer)
-        ammo_status = f"下一發 {next_round:.1f}s"
-    draw_text(surface, f"彈藥 {player.ammo}/{player.ammo_capacity}｜{ammo_status}", (30, 132), 17, config.ACCENT_COLOR)
-    draw_text(surface, f"大招能量 {player.ultimate_energy:.0f}%", (30, 156), 18, config.ACCENT_COLOR)
-    primary_status = "可射擊" if player.primary_cooldown <= 0 else f"普攻冷卻 {player.primary_cooldown:.1f}s"
-    tactical_status = "可使用" if player.tactical_cooldown <= 0 else f"配件冷卻 {player.tactical_cooldown:.1f}s"
-    draw_text(surface, f"強化 {player.upgrade_stacks}/10｜{primary_status}", (30, 180), 18, config.WARNING_COLOR)
-    draw_text(surface, f"{tactical.display_name}｜{tactical_status}", (30, 204), 18, config.WARNING_COLOR)
-    if not player.alive:
-        draw_text(surface, f"死亡｜{player.death_timer:.1f}s 後重生", (30, 228), 17, config.DANGER_COLOR)
-    elif player.character_id == CharacterId.SNIPER:
-        draw_text(surface, f"普攻提示：按住左鍵蓄力 {player.primary_charge:.1f}/0.6s，放開射擊", (30, 228), 16, config.MUTED_TEXT_COLOR)
-    elif player.character_id == CharacterId.SIPHONER:
-        draw_text(surface, "普攻提示：按住左鍵維持吸能光束，放開停止", (30, 228), 16, config.MUTED_TEXT_COLOR)
-    else:
-        draw_text(surface, "普攻提示：按住瞄準、放開施放｜大招：右鍵", (30, 228), 16, config.MUTED_TEXT_COLOR)
-    auto_aim_state = "開啟" if player.auto_aim_enabled else "關閉"
-    draw_text(
-        surface,
-        f"自動瞄準：{auto_aim_state}（Tab）｜回看 {config.AUTO_AIM_LOOKBACK_SECONDS:.2f}s 前",
-        (30, 249),
-        15,
-        config.ACCENT_COLOR if player.auto_aim_enabled else config.MUTED_TEXT_COLOR,
-    )
-    preview_slot = _preview_slot(input_state)
-    if preview_slot is not None:
-        preview_name = {"primary": "普攻", "ultimate": "大招", "tactical": "配件"}[preview_slot]
-        preview_state = "可施放" if _preview_is_valid(player, preview_slot) else "資源／冷卻不足"
-        preview_color = config.ACCENT_COLOR if preview_state == "可施放" else config.AIM_GUIDE_INVALID_COLOR
-        draw_text(surface, f"目前瞄準：{preview_name}｜{preview_state}", (30, 270), 16, preview_color)
-    active_status = None
-    active_status_color = config.TEXT_COLOR
-    if player.invulnerability_timer > 0.0:
-        active_status = f"目前狀態：免傷 {player.invulnerability_timer:.1f}s"
-        active_status_color = config.ACCENT_COLOR
-    elif player.damage_reduction_timer > 0.0:
-        active_status = f"目前狀態：大招減傷 {player.damage_reduction_timer:.1f}s"
-        active_status_color = config.TEXT_COLOR
-    elif player.shield_timer > 0.0 and player.shield_remaining > 0.0:
-        active_status = f"目前狀態：護盾 {player.shield_remaining:.0f}｜{player.shield_timer:.1f}s"
-        active_status_color = config.EXTRACTION_COLOR
-    elif player.root_timer > 0.0:
-        active_status = f"目前狀態：定身 {player.root_timer:.1f}s"
-        active_status_color = config.EXTRACTION_COLOR
-    elif player.slow_timer > 0.0:
-        active_status = f"目前狀態：減速 {player.slow_multiplier:.1f}x｜{player.slow_timer:.1f}s"
-        active_status_color = config.WARNING_COLOR
-    if active_status:
-        draw_text(surface, active_status, (30, 288), 15, active_status_color)
+    _draw_death_countdown(surface, player)
     remaining = max(0.0, match.duration - match.elapsed_time)
     draw_text(surface, f"剩餘 {remaining:05.1f}s", (config.WINDOW_WIDTH - 180, 20), 28, config.WARNING_COLOR)
     if match.elapsed_time >= match.extraction_start_time:
         draw_text(surface, f"撤離進度 {player.extraction_progress:04.1f}/10.0s", (config.WINDOW_WIDTH - 270, 54), 20, config.EXTRACTION_COLOR)
-    draw_text(surface, "WASD 移動｜左鍵普攻｜右鍵大招｜Space 配件｜Tab 自瞄｜F1 測試", (16, config.WINDOW_HEIGHT - 30), 18, config.MUTED_TEXT_COLOR)
+    draw_text(surface, "WASD 移動｜Tab 自瞄｜F1 測試", (16, config.WINDOW_HEIGHT - 30), 18, config.MUTED_TEXT_COLOR)
     _draw_player_roster(surface, match, viewer_id)
     if match.developer_mode.enabled:
         draw_text(surface, f"開發者模式｜假玩家 {match.developer_mode.selected_dummy_id}｜1～5選取 M放入 N返回", (16, 330), 19, config.WARNING_COLOR)
