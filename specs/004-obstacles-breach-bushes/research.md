@@ -162,4 +162,4 @@ update_player_timers 每幀增加兩個計時器；handle_player_death、respawn
 - 使用者確認的 2400×1400 地圖快照已保存為 `map-layout-draft.json`，正式 `config.py` 與快照由測試逐項比對。
 - `terrain.py`、正式 `draw_match` 地形層、牆後路徑阻擋、Breacher 終極技能/DASH 破壞、草叢觀看者隱藏與雙計時器恢復均已接入 `update_world`，完整測試 162/162 通過。
 - 地圖更新後以 45 個固定地形物件完成正式更新/繪製效能回歸：預熱 60 幀後量測 600 幀，3.4837 秒、172.23 FPS，高於 55 FPS 門檻。
-- 入口煙霧與固定場景效能驗證已完成；原始外部交付由 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 與 `v0.1.0` 建立，本次地圖更新預定以 `v0.2.0` 發布，外部分支、PR、發布與合併待 T036 完成。
+- 入口煙霧與固定場景效能驗證已完成；原始外部交付由 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 與 `v0.1.0` 建立，本次地圖更新已由 [PR #4](https://github.com/KGeneral7/pythonSDD/pull/4) 合併至 `main`，並發布 [v0.2.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0)。

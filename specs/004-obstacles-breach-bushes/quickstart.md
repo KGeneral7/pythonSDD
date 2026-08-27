@@ -129,7 +129,7 @@
 
 1. 依 `specs/004-obstacles-breach-bushes/tasks.md` 的 T002 確認未提交工作已保留；本次交付使用符合 004 識別字的 `codex/004-obstacles-breach-bushes`，`day3/` 不納入提交。
 2. 地圖更新後效能量測已完成：預熱 60 幀後量測 600 幀／3.4837 秒／172.23 FPS，場景為 1280×720、6 名玩家、12 隻怪物與 45 個固定地形物件，高於 55 FPS 門檻。
-3. 原始功能的 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 與 [v0.1.0 發布](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0) 已作為基線；本次預定建立非 draft PR 並發布 [v0.2.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0)，版本發布與合併待 T036 完成。專案未配置 GitHub Actions，故以本機驗證與 GitHub 可合併狀態作為檢查結果。
+3. 原始功能的 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 與 [v0.1.0 發布](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0) 已作為基線；本次已建立非 draft [PR #4](https://github.com/KGeneral7/pythonSDD/pull/4)，以合併提交 `2f3383f` 合併至 `main`，並發布 [v0.2.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0)。專案未配置 GitHub Actions，故以本機驗證與 GitHub 可合併狀態作為檢查結果。
 
 ## 實作驗證狀態
 
@@ -138,4 +138,4 @@
 - 已完成：依使用者確認的 JSON 更新 `config.py` 與 [map-layout-draft.json](map-layout-draft.json)；全部紅框物件保留。
 - 已完成：`rendering.draw_terrain` 接入正式 `draw_match` → `draw_world` 地圖層，無頭 Pygame 確認完整世界的 45 個牆/草叢矩形，以及不同相機位置的正式 1280×720 畫面都可繪出對應物件。
 - 已完成：牆體碰撞、直線/飛行阻擋、Breacher 終極技能/DASH 破壞、破陣者主要技能阻擋、草叢觀看者隱藏、戰鬥恢復、入口煙霧與效能驗證。
-- 待完成：T036 的本次遠端分支推送、PR、版本發布、合併與分支清理；原始 PR #3／`v0.1.0` 僅作既有功能基線記錄。
+- 已完成：T036 的本次遠端分支推送、[PR #4](https://github.com/KGeneral7/pythonSDD/pull/4)、版本發布、合併與文件回填；`2f3383f` 已進入 `main`，`v0.2.0` 已發布。分支清理於文件同步 PR 合併後依憲章執行；原始 PR #3／`v0.1.0` 僅作既有功能基線記錄。

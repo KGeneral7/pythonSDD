@@ -5,7 +5,7 @@
 
 ## 分支與工作區保護
 
-- `.specify/feature.json`、`spec.md`、`plan.md`、`tasks.md` 保留原始 `003-combat-vfx-cone-ammo` 識別字；本次修正隨 Feature 004 的 `codex/004-obstacles-breach-bushes` 整合交付。
+- `.specify/feature.json`、`spec.md`、`plan.md`、`tasks.md` 保留原始 `003-combat-vfx-cone-ammo` 識別字；本次修正隨 Feature 004 的 `codex/004-obstacles-breach-bushes` 整合，已由 [PR #4](https://github.com/KGeneral7/pythonSDD/pull/4) 合併並發布於 [v0.2.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0)。
 - 實作前已存在的 `day3/` 工作區筆記屬於既有使用者內容；本次不覆蓋、不納入暫存，也不與功能 PR 混提交。`.specify/memory/constitution.md` 的 SDD 治理更新則隨本次文件交付納入。
 
 ## 前置條件
