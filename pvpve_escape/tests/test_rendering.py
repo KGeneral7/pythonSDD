@@ -584,5 +584,330 @@ class TraditionalChineseFontTests(unittest.TestCase):
                 rendering.draw_match(surface, match, InputState(aim_direction=Vector2(1, 0)))
 
 
+class OverheadRenderingTests(unittest.TestCase):
+    """頭頂 HUD 的可觀察繪製測試；不依賴視窗、滑鼠或完整遊戲迴圈。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+        pygame.init()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        # 只清理本 fixture 可能建立的顯示資源；保留共用字型初始化，
+        # 避免同模組後續既有渲染測試使用已失效的 Font 物件。
+        pygame.display.quit()
+
+    def make_surface(self) -> pygame.Surface:
+        """建立所有頭頂 HUD 測試共用的 headless surface。"""
+
+        return pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+
+    def capture_texts(self, draw_call) -> list[tuple[str, tuple[int, int], tuple[object, ...], dict[str, object]]]:
+        calls: list[tuple[str, tuple[int, int], tuple[object, ...], dict[str, object]]] = []
+
+        def capture(_surface, text, position, *args, **kwargs) -> None:
+            calls.append((text, position, args, kwargs))
+
+        with patch.object(rendering, "draw_text", side_effect=capture):
+            draw_call()
+        return calls
+
+    def capture_overlay(
+        self,
+        player,
+        point: tuple[int, int] = (640, 360),
+        *,
+        show_private_info: bool,
+    ) -> tuple[
+        list[tuple[str, tuple[int, int], tuple[object, ...], dict[str, object]]],
+        list[tuple[tuple[object, ...], dict[str, object]]],
+        list[tuple[tuple[object, ...], dict[str, object]]],
+        list[tuple[tuple[object, ...], dict[str, object]]],
+    ]:
+        text_calls: list[tuple[str, tuple[int, int], tuple[object, ...], dict[str, object]]] = []
+        circle_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+        rect_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+        health_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+        def capture_text(_surface, text, position, *args, **kwargs) -> None:
+            text_calls.append((text, position, args, kwargs))
+
+        def capture_circle(*args, **kwargs) -> None:
+            circle_calls.append((args, kwargs))
+
+        def capture_rect(*args, **kwargs) -> None:
+            rect_calls.append((args, kwargs))
+
+        def capture_health(*args, **kwargs) -> None:
+            health_calls.append((args, kwargs))
+
+        with (
+            patch.object(rendering, "draw_text", side_effect=capture_text),
+            patch.object(rendering, "_draw_health_bar", side_effect=capture_health),
+            patch.object(rendering.pygame.draw, "circle", side_effect=capture_circle),
+            patch.object(rendering.pygame.draw, "rect", side_effect=capture_rect),
+        ):
+            rendering._draw_player_overlay(
+                self.make_surface(),
+                player,
+                point,
+                show_private_info=show_private_info,
+            )
+        return text_calls, circle_calls, rect_calls, health_calls
+
+    def test_local_overhead_shows_public_and_private_state(self) -> None:
+        match = create_match()
+        player = match.players[0]
+        player.ammo = 0
+        player.ultimate_energy = 0.0
+        player.upgrade_stacks = 0
+        player.tactical_cooldown = 2.0
+
+        texts, circles, rects, _ = self.capture_overlay(player, show_private_info=True)
+        values = [call[0] for call in texts]
+        self.assertTrue(any(value.startswith("0 ") for value in values))
+        self.assertIn(f"{player.health:.0f}/{player.max_health:.0f}", values)
+        self.assertIn(f"彈藥 0/{player.ammo_capacity}", values)
+        self.assertIn("大招 0%", values)
+        self.assertIn(f"強化 0/{config.MAX_UPGRADE_STACKS}", values)
+        self.assertIn(config.PANEL_BORDER_COLOR, [args[1] for args, _ in rects if len(args) > 1])
+        self.assertIn(config.PANEL_BORDER_COLOR, [args[1] for args, _ in circles if len(args) > 1])
+
+        player.ammo = player.ammo_capacity
+        player.ultimate_energy = 100.0
+        player.upgrade_stacks = config.MAX_UPGRADE_STACKS
+        player.tactical_cooldown = 0.0
+        texts, circles, _, _ = self.capture_overlay(player, show_private_info=True)
+        values = [call[0] for call in texts]
+        self.assertIn(f"彈藥 {player.ammo_capacity}/{player.ammo_capacity}", values)
+        self.assertIn("大招 100%", values)
+        self.assertIn(f"強化 {config.MAX_UPGRADE_STACKS}/{config.MAX_UPGRADE_STACKS}", values)
+        self.assertIn(config.EXTRACTION_COLOR, [args[1] for args, _ in circles if len(args) > 1])
+
+    def test_local_overhead_clamps_resources_and_health_boundaries_repeatedly(self) -> None:
+        match = create_match()
+        player = match.players[0]
+        for index in range(20):
+            at_max = index % 2 == 1
+            player.health = player.max_health + 500.0 if at_max else -500.0
+            player.ammo = player.ammo_capacity + 5 if at_max else -5
+            player.ultimate_energy = 500.0 if at_max else -500.0
+            player.upgrade_stacks = config.MAX_UPGRADE_STACKS + 5 if at_max else -5
+
+            texts, _, _, _ = self.capture_overlay(player, show_private_info=True)
+            values = [call[0] for call in texts]
+            expected_health = f"{player.max_health:.0f}/{player.max_health:.0f}" if at_max else f"0/{player.max_health:.0f}"
+            expected_ammo = f"彈藥 {player.ammo_capacity}/{player.ammo_capacity}" if at_max else f"彈藥 0/{player.ammo_capacity}"
+            expected_energy = "大招 100%" if at_max else "大招 0%"
+            expected_upgrade = (
+                f"強化 {config.MAX_UPGRADE_STACKS}/{config.MAX_UPGRADE_STACKS}"
+                if at_max
+                else f"強化 0/{config.MAX_UPGRADE_STACKS}"
+            )
+            self.assertIn(expected_health, values)
+            self.assertIn(expected_ammo, values)
+            self.assertIn(expected_energy, values)
+            self.assertIn(expected_upgrade, values)
+
+    def test_local_overhead_gadget_color_updates_for_ready_cooldown_and_death(self) -> None:
+        match = create_match()
+        player = match.players[0]
+        states = ((True, 0.0, config.EXTRACTION_COLOR), (True, 1.0, config.PANEL_BORDER_COLOR), (False, 0.0, config.PANEL_BORDER_COLOR))
+        for alive, cooldown, expected_color in states:
+            for _ in range(20):
+                player.alive = alive
+                player.tactical_cooldown = cooldown
+                _, circles, _, _ = self.capture_overlay(player, show_private_info=True)
+                colors = [args[1] for args, _ in circles if len(args) > 1]
+                self.assertIn(expected_color, colors)
+                if not alive:
+                    self.assertNotIn(config.EXTRACTION_COLOR, colors)
+        player.alive = True
+
+    def test_local_overhead_follows_player_screen_coordinates_twenty_times(self) -> None:
+        match = create_match()
+        player = match.players[0]
+        observed_points: list[tuple[int, int]] = []
+        for index in range(20):
+            match.camera.position = Vector2(100.0 + index * 3.0, 40.0 + index * 2.0)
+            player.position = Vector2(500.0 + index * 8.0, 300.0 + index * 4.0)
+            expected_point = rendering._screen_point(match, player.position)
+            _, _, _, health_calls = self.capture_overlay(player, expected_point, show_private_info=True)
+            self.assertEqual(len(health_calls), 1)
+            observed_point = health_calls[0][0][1]
+            self.assertEqual(observed_point, expected_point)
+            observed_points.append(observed_point)
+        self.assertEqual(len(set(observed_points)), 20)
+
+    def test_overhead_edge_clamp_and_long_identity_use_shared_layout_rules(self) -> None:
+        from types import SimpleNamespace
+
+        match = create_match()
+        player = match.players[0]
+        long_definition = SimpleNamespace(display_name="這是一個非常非常長的角色名稱，用來驗證省略號", character_id=player.character_id)
+        surface = self.make_surface()
+        with patch.object(rendering, "get_character_definition", return_value=long_definition):
+            left_texts, _, _, left_health = self.capture_overlay(player, (0, 360), show_private_info=False)
+            right_texts, _, _, right_health = self.capture_overlay(
+                player,
+                (surface.get_width(), 360),
+                show_private_info=False,
+            )
+
+        left_identity = next(call for call in left_texts if call[0].startswith(f"{player.player_id} "))
+        right_identity = next(call for call in right_texts if call[0].startswith(f"{player.player_id} "))
+        self.assertTrue(left_identity[0].endswith("…"))
+        self.assertTrue(right_identity[0].endswith("…"))
+        self.assertEqual(left_health[0][0][1][0], 8 + rendering._OVERHEAD_MAX_WIDTH // 2)
+        self.assertEqual(right_health[0][0][1][0], surface.get_width() - 8 - rendering._OVERHEAD_MAX_WIDTH // 2)
+        self.assertGreaterEqual(left_identity[1][0] - rendering._OVERHEAD_MAX_WIDTH // 2, 8)
+        self.assertLessEqual(right_identity[1][0] + rendering._OVERHEAD_MAX_WIDTH // 2, surface.get_width() - 8)
+
+    def test_overhead_vertical_clamp_keeps_the_information_block_on_screen(self) -> None:
+        match = create_match()
+        player = match.players[0]
+        surface = self.make_surface()
+        identity_font_height = rendering._get_text_font(14).get_height()
+
+        for point in ((surface.get_width() // 2, 0), (surface.get_width() // 2, surface.get_height())):
+            panel_calls: list[pygame.Rect] = []
+
+            def capture_panel(_surface, rect, *args, **kwargs) -> None:
+                panel_calls.append(rect.copy())
+
+            with patch.object(rendering, "draw_panel", side_effect=capture_panel):
+                texts, _, _, health_calls = self.capture_overlay(player, point, show_private_info=True)
+            identity = next(call for call in texts if call[0].startswith(f"{player.player_id} "))
+            private_row = next(rect for rect in panel_calls if rect.height == rendering._OVERHEAD_PRIVATE_ROW_HEIGHT)
+            health_center = health_calls[0][0][1]
+
+            self.assertGreaterEqual(identity[1][1] - identity_font_height // 2, 8)
+            self.assertGreaterEqual(health_center[1] + rendering._OVERHEAD_HEALTH_BAR_Y_OFFSET, 8)
+            self.assertGreaterEqual(private_row.top, 8)
+            self.assertLessEqual(private_row.bottom, surface.get_height() - 8)
+
+    def test_other_player_overhead_only_contains_public_information(self) -> None:
+        match = create_match()
+        player = match.players[1]
+        player.alive = False
+        player.ammo = 0
+        player.ultimate_energy = 100.0
+        player.upgrade_stacks = config.MAX_UPGRADE_STACKS
+        player.tactical_cooldown = 0.0
+        player.death_timer = 4.0
+
+        for _ in range(20):
+            texts, circles, rects, _ = self.capture_overlay(player, show_private_info=False)
+            values = [call[0] for call in texts]
+            self.assertTrue(any(value.startswith(f"{player.player_id} ") for value in values))
+            self.assertIn(f"{player.health:.0f}/{player.max_health:.0f}", values)
+            for private_label in ("彈藥", "大招", "強化", "配件", "死亡"):
+                self.assertFalse(any(private_label in value for value in values))
+            self.assertEqual(circles, [])
+            self.assertEqual(rects, [])
+
+    def test_draw_world_centralizes_private_visibility_for_all_six_players(self) -> None:
+        match = create_match()
+        match.bushes = []
+        match.monsters = []
+        match.effects = []
+        match.monster_projectiles = []
+        match.players[3].alive = False
+        observed: list[tuple[int, bool]] = []
+
+        def capture_overlay(_surface, player, _point, *, show_private_info) -> None:
+            observed.append((player.player_id, show_private_info))
+
+        with patch.object(rendering, "_draw_player_overlay", side_effect=capture_overlay):
+            rendering.draw_world(self.make_surface(), match, viewer_id=0)
+
+        self.assertEqual({player_id for player_id, _ in observed}, set(range(6)))
+        self.assertEqual({player_id for player_id, private in observed if private}, {0})
+        self.assertEqual({player_id for player_id, private in observed if not private}, set(range(1, 6)))
+
+    def test_selection_page_contains_role_attack_and_operation_hints(self) -> None:
+        from pvpve_escape.characters import get_all_character_definitions
+
+        for selected_index in range(len(CharacterId)):
+            calls = self.capture_texts(
+                lambda selected_index=selected_index: rendering.draw_selection(
+                    self.make_surface(), selected_index, 0
+                )
+            )
+            values = [call[0] for call in calls]
+            for definition in get_all_character_definitions():
+                self.assertIn(definition.primary_kind, values)
+            self.assertTrue(any("左鍵" in value for value in values))
+            self.assertTrue(any("右鍵" in value for value in values))
+            self.assertTrue(any("Space" in value for value in values))
+            self.assertTrue(any("蓄力" in value for value in values))
+            self.assertTrue(any("持續引導" in value for value in values))
+
+    def test_battle_hud_no_longer_contains_fixed_attack_prompts(self) -> None:
+        match = create_match()
+        panels: list[pygame.Rect] = []
+
+        def capture_panel(_surface, rect, *args, **kwargs) -> None:
+            panels.append(rect.copy())
+
+        with patch.object(rendering, "draw_panel", side_effect=capture_panel):
+            calls = self.capture_texts(lambda: rendering.draw_hud(self.make_surface(), match))
+        values = [call[0] for call in calls]
+        for removed_prompt in ("左鍵普攻", "右鍵大招", "Space 配件", "普攻提示"):
+            self.assertFalse(any(removed_prompt in value for value in values))
+        self.assertTrue(any("WASD 移動" in value for value in values))
+        self.assertTrue(any("Tab" in value for value in values))
+        self.assertTrue(any("F1" in value for value in values))
+        self.assertNotIn(pygame.Rect(16, 16, 470, 310), panels)
+
+    def test_local_death_countdown_uses_large_centered_pygame_font_text(self) -> None:
+        match = create_match()
+        player = match.players[0]
+        player.alive = False
+        player.death_timer = 4.6
+
+        calls = self.capture_texts(lambda: rendering.draw_hud(self.make_surface(), match))
+        countdown_calls = [call for call in calls if call[0] == "死亡倒數 4.6s"]
+
+        self.assertEqual(len(countdown_calls), 1)
+        _, position, args, _ = countdown_calls[0]
+        self.assertEqual(position, (config.WINDOW_WIDTH // 2, config.WINDOW_HEIGHT // 2))
+        self.assertGreaterEqual(args[0], 48)
+        self.assertTrue(args[2])
+
+    def test_death_countdown_is_private_to_the_current_viewer(self) -> None:
+        match = create_match()
+        match.players[1].alive = False
+        match.players[1].death_timer = 4.0
+
+        other_player_view = self.capture_texts(
+            lambda: rendering.draw_hud(self.make_surface(), match, viewer_id=0)
+        )
+        self.assertFalse(any(call[0].startswith("死亡倒數") for call in other_player_view))
+
+        local_dead_view = self.capture_texts(
+            lambda: rendering.draw_hud(self.make_surface(), match, viewer_id=1)
+        )
+        self.assertTrue(any(call[0] == "死亡倒數 4.0s" for call in local_dead_view))
+
+    def test_qwe_update_selected_tactical_index(self) -> None:
+        from pvpve_escape.main import GameApplication
+
+        controller = HumanController()
+        application = GameApplication.__new__(GameApplication)
+        application.selected_character_index = 0
+        application.selected_tactical_index = 0
+        for key, expected_index in ((pygame.K_q, 0), (pygame.K_w, 1), (pygame.K_e, 2)):
+            state = controller.collect(
+                [pygame.event.Event(pygame.KEYDOWN, key=key)],
+                Vector2(),
+                Vector2(),
+                MatchPhase.CHARACTER_SELECT,
+            )
+            application._update_selection(state)
+            self.assertEqual(application.selected_tactical_index, expected_index)
+
+
 if __name__ == "__main__":
     unittest.main()
