@@ -311,7 +311,9 @@ def _draw_directional_wedge(
     angle_degrees: float,
     color: tuple[int, int, int],
 ) -> None:
-    radius = max(24, round(radius))
+    # 半徑必須遵守呼叫端提供的世界邊界端點；固定放大到 24 會讓
+    # 玩家貼近邊界時的瞄準弧線再次畫出世界外。
+    radius = max(1, round(radius))
     heading = math.atan2(direction.y, direction.x)
     half_angle = math.radians(angle_degrees) / 2
     left = _polar_point(center, heading - half_angle, radius)
@@ -349,7 +351,7 @@ def _draw_aim_guide(surface: pygame.Surface, match: MatchState, guide: AimGuide)
                 surface,
                 origin,
                 guide.direction,
-                guide.range,
+                min(guide.range, guide.origin.distance_to(guide.end)),
                 guide.angle_degrees,
                 color,
             )
@@ -688,6 +690,7 @@ def draw_world(surface: pygame.Surface, match: MatchState, input_state: InputSta
                 slot,
                 player.aim_direction,
                 valid=_preview_is_valid(player, slot),
+                move_direction=input_state.move_direction,
             )
             _draw_aim_guide(surface, match, guide)
 

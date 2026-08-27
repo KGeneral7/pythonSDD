@@ -17,7 +17,10 @@ def _safe_direction(direction: Vector2) -> Vector2:
 def clamp_world_point(point: Vector2, margin: float = 0.0) -> Vector2:
     """將預覽點限制在世界矩形內，避免顯示可操作的世界外區域。"""
 
-    safe_margin = max(0.0, margin)
+    safe_margin = min(
+        max(0.0, float(margin)),
+        min(config.WORLD_WIDTH, config.WORLD_HEIGHT) / 2,
+    )
     return Vector2(
         max(safe_margin, min(point.x, config.WORLD_WIDTH - safe_margin)),
         max(safe_margin, min(point.y, config.WORLD_HEIGHT - safe_margin)),
@@ -30,27 +33,38 @@ def clamp_aim_endpoint(
     distance: float,
     world_width: float = config.WORLD_WIDTH,
     world_height: float = config.WORLD_HEIGHT,
+    margin: float = 0.0,
 ) -> Vector2:
-    """沿射線取最遠端點，並在抵達世界邊界時提前截斷。"""
+    """沿射線取最遠端點，並在抵達世界邊界時提前截斷。
 
+    ``margin`` 讓投射物或角色本體保留碰撞半徑；更新與繪製可因此
+    使用同一個世界內縮矩形，避免斜向接近邊界時被軸向夾制改變路徑。
+    """
+
+    safe_margin = min(
+        max(0.0, float(margin)),
+        min(float(world_width), float(world_height)) / 2,
+    )
+    min_x, max_x = safe_margin, max(safe_margin, world_width - safe_margin)
+    min_y, max_y = safe_margin, max(safe_margin, world_height - safe_margin)
     start = Vector2(
-        max(0.0, min(origin.x, world_width)),
-        max(0.0, min(origin.y, world_height)),
+        max(min_x, min(origin.x, max_x)),
+        max(min_y, min(origin.y, max_y)),
     )
     heading = _safe_direction(direction)
     max_distance = max(0.0, distance)
     boundary_distance = max_distance
     if heading.x > 0:
-        boundary_distance = min(boundary_distance, (world_width - start.x) / heading.x)
+        boundary_distance = min(boundary_distance, (max_x - start.x) / heading.x)
     elif heading.x < 0:
-        boundary_distance = min(boundary_distance, (0.0 - start.x) / heading.x)
+        boundary_distance = min(boundary_distance, (min_x - start.x) / heading.x)
     if heading.y > 0:
-        boundary_distance = min(boundary_distance, (world_height - start.y) / heading.y)
+        boundary_distance = min(boundary_distance, (max_y - start.y) / heading.y)
     elif heading.y < 0:
-        boundary_distance = min(boundary_distance, (0.0 - start.y) / heading.y)
+        boundary_distance = min(boundary_distance, (min_y - start.y) / heading.y)
     return Vector2(
-        max(0.0, min(world_width, start.x + heading.x * max(0.0, boundary_distance))),
-        max(0.0, min(world_height, start.y + heading.y * max(0.0, boundary_distance))),
+        max(min_x, min(max_x, start.x + heading.x * max(0.0, boundary_distance))),
+        max(min_y, min(max_y, start.y + heading.y * max(0.0, boundary_distance))),
     )
 
 
@@ -96,8 +110,13 @@ def build_aim_guide(
     ability_slot: str,
     aim_direction: Vector2,
     valid: bool = True,
+    move_direction: Vector2 | None = None,
 ) -> AimGuide:
-    """依角色與技能欄位建立一份不會修改玩家狀態的預覽資料。"""
+    """依角色與技能欄位建立一份不會修改玩家狀態的預覽資料。
+
+    衝刺配件與實際施放共用移動方向優先規則；其他技能忽略
+    ``move_direction``，仍只沿瞄準方向預覽。
+    """
 
     slot = ability_slot.lower()
     if slot not in {"primary", "ultimate", "tactical"}:
@@ -111,31 +130,41 @@ def build_aim_guide(
             distance = character.primary_range
             endpoints = tuple(
                 clamp_world_point(
-                    clamp_aim_endpoint(origin, _rotate(direction, angle), distance),
-                    config.BREACH_PELLET_RADIUS,
+                    clamp_aim_endpoint(
+                        origin,
+                        _rotate(direction, angle),
+                        distance,
+                        margin=config.BREACH_PELLET_RADIUS,
+                    ),
                 )
                 for angle in (-30.0, -15.0, 0.0, 15.0, 30.0)
             )
             return _guide(player, slot, "wedge", direction, endpoints[2], range_distance=distance, angle_degrees=60.0, path_points=endpoints, valid=valid)
         if player.character_id == CharacterId.SNIPER:
-            end = clamp_world_point(
-                clamp_aim_endpoint(origin, direction, character.primary_range),
-                config.SNIPER_PROJECTILE_RADIUS,
+            end = clamp_aim_endpoint(
+                origin,
+                direction,
+                character.primary_range,
+                margin=config.SNIPER_PROJECTILE_RADIUS,
             )
             return _guide(player, slot, "line", direction, end, range_distance=character.primary_range, valid=valid)
         if player.character_id == CharacterId.GUARDIAN:
             end = clamp_aim_endpoint(origin, direction, character.primary_range)
             return _guide(player, slot, "wedge", direction, end, range_distance=character.primary_range, angle_degrees=100.0, valid=valid)
         if player.character_id == CharacterId.HUNTER:
-            end = clamp_world_point(
-                clamp_aim_endpoint(origin, direction, character.primary_range),
-                config.BOOMERANG_PROJECTILE_RADIUS,
+            end = clamp_aim_endpoint(
+                origin,
+                direction,
+                character.primary_range,
+                margin=config.BOOMERANG_PROJECTILE_RADIUS,
             )
             return _guide(player, slot, "path", direction, end, range_distance=character.primary_range, path_points=(origin, end, origin), valid=valid)
         if player.character_id == CharacterId.CONTROLLER:
-            end = clamp_world_point(
-                clamp_aim_endpoint(origin, direction, character.primary_range),
-                config.MINE_PROJECTILE_RADIUS,
+            end = clamp_aim_endpoint(
+                origin,
+                direction,
+                character.primary_range,
+                margin=config.MINE_PROJECTILE_RADIUS,
             )
             return _guide(player, slot, "circle", direction, end, range_distance=character.primary_range, radius=100.0, valid=valid)
         end = clamp_aim_endpoint(origin, direction, character.primary_range)
@@ -150,9 +179,11 @@ def build_aim_guide(
         if player.character_id == CharacterId.GUARDIAN:
             return _guide(player, slot, "circle", direction, origin, radius=38.0, valid=valid)
         if player.character_id == CharacterId.HUNTER:
-            end = clamp_world_point(
-                clamp_aim_endpoint(origin, direction, 360.0),
-                config.PLAYER_RADIUS,
+            end = clamp_aim_endpoint(
+                origin,
+                direction,
+                360.0,
+                margin=config.PLAYER_RADIUS,
             )
             return _guide(player, slot, "path", direction, end, range_distance=360.0, path_points=(origin, end), valid=valid)
         if player.character_id == CharacterId.CONTROLLER:
@@ -162,10 +193,14 @@ def build_aim_guide(
 
     tactical = get_tactical_definition(player.tactical_id)
     if player.tactical_id == TacticalId.DASH:
+        if move_direction is not None and move_direction.length():
+            direction = _safe_direction(move_direction)
         distance = float(tactical.parameters.get("distance", 220.0))
-        end = clamp_world_point(
-            clamp_aim_endpoint(origin, direction, distance),
-            config.PLAYER_RADIUS,
+        end = clamp_aim_endpoint(
+            origin,
+            direction,
+            distance,
+            margin=config.PLAYER_RADIUS,
         )
         return _guide(player, slot, "path", direction, end, range_distance=distance, path_points=(origin, end), valid=valid)
     if player.tactical_id == TacticalId.SHIELD:

@@ -3,6 +3,7 @@
 import unittest
 
 from pvpve_escape import config
+from pvpve_escape.aiming import build_aim_guide
 from pvpve_escape.controllers import InputState
 from pvpve_escape.characters import (
     calculate_attack_damage,
@@ -56,6 +57,85 @@ class WorldBoundaryTests(unittest.TestCase):
         match.players[0].position = Vector2(2399, 1399)
         match.camera.follow(match.players[0].position)
         self.assertEqual(match.camera.position.tuple(), (1120, 680))
+
+    def test_diagonal_boomerang_uses_the_same_bounded_ray_as_its_aim_guide(self) -> None:
+        match = create_match(CharacterId.HUNTER)
+        owner = match.players[0]
+        owner.position = Vector2(2380, 700)
+        owner.spawn_position = owner.position.copy()
+        for other in match.players[1:]:
+            other.alive = False
+
+        guide = build_aim_guide(owner, "primary", Vector2(1, 1))
+        action = create_primary_action(owner, Vector2(1, 1))
+        self.assertIsNotNone(action)
+        _apply_action(match, action)
+        effect = next(effect for effect in match.effects if effect.kind == "boomerang")
+
+        update_world(match, {0: InputState()}, 0.05)
+
+        self.assertAlmostEqual(effect.max_distance, owner.position.distance_to(guide.end), places=5)
+        self.assertTrue(effect.returning)
+        self.assertEqual(effect.position.tuple(), guide.end.tuple())
+
+    def test_diagonal_dash_and_control_land_on_the_preview_endpoint(self) -> None:
+        dash_match = create_match(selected_tactical=TacticalId.DASH)
+        dash_owner = dash_match.players[0]
+        dash_owner.position = Vector2(2380, 700)
+        dash_guide = build_aim_guide(dash_owner, "tactical", Vector2(1, 1))
+        update_world(
+            dash_match,
+            {0: InputState(aim_direction=Vector2(1, 1), tactical_released=True)},
+            0.01,
+        )
+        self.assertEqual(dash_owner.position.tuple(), dash_guide.end.tuple())
+
+        control_match = create_match(selected_tactical=TacticalId.CONTROL)
+        control_owner = control_match.players[0]
+        control_owner.position = Vector2(2380, 700)
+        control_guide = build_aim_guide(control_owner, "tactical", Vector2(1, 1))
+        update_world(
+            control_match,
+            {0: InputState(aim_direction=Vector2(1, 1), tactical_released=True)},
+            0.01,
+        )
+        control_effect = next(effect for effect in control_match.effects if effect.kind == "control_zone")
+        self.assertEqual(control_effect.position.tuple(), control_guide.end.tuple())
+
+    def test_dash_preview_uses_move_direction_when_it_is_available(self) -> None:
+        match = create_match(selected_tactical=TacticalId.DASH)
+        owner = match.players[0]
+        guide = build_aim_guide(
+            owner,
+            "tactical",
+            Vector2(1, 0),
+            move_direction=Vector2(0, 1),
+        )
+        action = create_tactical_action(owner, Vector2(1, 0), Vector2(0, 1))
+
+        self.assertIsNotNone(action)
+        self.assertEqual(guide.direction.tuple(), action.direction.tuple())
+
+    def test_instant_attack_visuals_stay_at_their_cast_position(self) -> None:
+        for role, effect_kind in (
+            (CharacterId.BREACHER, "breach_cone"),
+            (CharacterId.GUARDIAN, "guardian_arc"),
+        ):
+            match = create_match(role)
+            match.monsters = []
+            owner = match.players[0]
+            for other in match.players[1:]:
+                other.alive = False
+            action = create_primary_action(owner, Vector2(1, 0))
+            self.assertIsNotNone(action)
+            _apply_action(match, action)
+            effect = next(effect for effect in match.effects if effect.kind == effect_kind)
+            cast_position = effect.position.copy()
+            owner.position = owner.position + Vector2(200, 100)
+
+            update_world(match, {0: InputState()}, 0.05)
+
+            self.assertEqual(effect.position.tuple(), cast_position.tuple(), role)
 
 
 class RestartTests(unittest.TestCase):
@@ -115,6 +195,24 @@ class CombatRuleTests(unittest.TestCase):
         self.assertTrue(player.alive)
         self.assertEqual(player.health, player.max_health)
         self.assertEqual(player.ammo, player.ammo_capacity)
+
+    def test_monster_kill_removes_owned_effects_in_the_same_update(self) -> None:
+        match = create_match(CharacterId.GUARDIAN)
+        match.monsters = [match.monsters[0]]
+        owner = match.players[0]
+        monster = match.monsters[0]
+        monster.position = owner.position.copy()
+        owner.health = config.MONSTER_CONTACT_DAMAGE
+
+        action = create_primary_action(owner, Vector2(1, 0))
+        self.assertIsNotNone(action)
+        _apply_action(match, action)
+        effect = next(effect for effect in match.effects if effect.kind == "guardian_arc")
+
+        update_world(match, {0: InputState()}, 0.05)
+
+        self.assertFalse(owner.alive)
+        self.assertNotIn(effect, match.effects)
 
     def test_tactical_cooldown_is_fixed_and_resets_after_time(self) -> None:
         match = create_match()
@@ -585,6 +683,33 @@ class AimAndProjectileRuleTests(unittest.TestCase):
         update_world(death_match, {0: InputState(primary_held=True)}, 0.01)
         self.assertFalse(any(effect.kind == "beam" for effect in death_match.effects))
 
+    def test_siphoner_full_channel_has_eight_ticks_in_1_2_seconds(self) -> None:
+        match = create_match(CharacterId.SIPHONER)
+        match.monsters = []
+        owner, target = match.players[0], match.players[1]
+        owner.position = Vector2(500, 500)
+        target.position = Vector2(600, 500)
+        target.max_health = 1000.0
+        target.health = 1000.0
+        for other in match.players[2:]:
+            other.alive = False
+
+        for frame in range(24):
+            update_world(
+                match,
+                {
+                    0: InputState(
+                        aim_direction=Vector2(1, 0),
+                        primary_pressed=frame == 0,
+                        primary_held=True,
+                    )
+                },
+                0.05,
+            )
+
+        self.assertEqual(target.health, 952.0)
+        self.assertFalse(any(effect.kind == "beam" for effect in match.effects))
+
     def test_insufficient_resources_never_cast_on_release(self) -> None:
         match = self._solo_match(CharacterId.BREACHER)
         owner = match.players[0]
@@ -816,6 +941,29 @@ class ExtractionRuleTests(unittest.TestCase):
         timeout_match.elapsed_time = timeout_match.duration
         self.assertTrue(resolve_match_timeout(timeout_match))
         self.assertEqual(timeout_match.phase, MatchPhase.NO_WINNER)
+
+    def test_extraction_uses_only_time_after_activation_and_before_timeout(self) -> None:
+        activation_match = create_match()
+        activation_match.monsters = []
+        activation_player = activation_match.players[0]
+        activation_player.position = activation_match.extraction_zone.center.copy()
+        activation_match.elapsed_time = 209.99
+
+        update_world(activation_match, {0: InputState()}, 0.05)
+
+        self.assertAlmostEqual(activation_player.extraction_progress, 0.04, places=5)
+
+        timeout_match = create_match()
+        timeout_match.monsters = []
+        timeout_player = timeout_match.players[0]
+        timeout_player.position = timeout_match.extraction_zone.center.copy()
+        timeout_player.extraction_progress = 9.97
+        timeout_match.elapsed_time = 239.98
+
+        update_world(timeout_match, {0: InputState()}, 0.05)
+
+        self.assertEqual(timeout_match.phase, MatchPhase.NO_WINNER)
+        self.assertAlmostEqual(timeout_player.extraction_progress, 9.99, places=5)
 
 
 if __name__ == "__main__":

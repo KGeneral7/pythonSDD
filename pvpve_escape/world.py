@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 from . import config
+from .aiming import clamp_aim_endpoint
 from .characters import (
     calculate_attack_damage,
     calculate_control_duration,
@@ -181,6 +182,17 @@ def distance_to_segment(point: Vector2, start: Vector2, end: Vector2) -> float:
     return point.distance_to(closest)
 
 
+def _bounded_endpoint(
+    origin: Vector2,
+    direction: Vector2,
+    distance: float,
+    margin: float = 0.0,
+) -> Vector2:
+    """回傳與瞄準預覽相同的世界內有效端點。"""
+
+    return clamp_aim_endpoint(origin, direction, max(0.0, distance), margin=margin)
+
+
 def _target_entries(match: MatchState, owner_id: int):
     """依序提供所有可被技能命中的存活玩家與怪物。"""
 
@@ -326,6 +338,13 @@ def _next_effect(match: MatchState, kind: str, action: CombatAction, **kwargs) -
     metadata_override = effect_values.get("metadata")
     if isinstance(metadata_override, dict):
         metadata.update(metadata_override)
+    radius = float(effect_values.get("radius", action.radius))
+    max_distance = float(effect_values["max_distance"])
+    if max_distance > 0:
+        # 所有具有路徑的效果都沿同一條世界內有效射線截斷；半徑較大的
+        # 投射物需要使用內縮邊界，避免中心雖在世界內但圖像／碰撞半徑穿出。
+        bounded_end = _bounded_endpoint(action.origin, action.direction, max_distance, radius)
+        max_distance = min(max_distance, action.origin.distance_to(bounded_end))
     effect = AbilityEffect(
         effect_id=match.next_effect_id,
         kind=kind,
@@ -334,9 +353,9 @@ def _next_effect(match: MatchState, kind: str, action: CombatAction, **kwargs) -
         previous_position=position.copy(),
         direction=action.direction.normalized() if action.direction.length() else Vector2(1, 0),
         damage=action.damage,
-        radius=float(effect_values.get("radius", action.radius)),
+        radius=radius,
         remaining=float(effect_values["remaining"]),
-        max_distance=float(effect_values["max_distance"]),
+        max_distance=max_distance,
         projectile_speed=float(effect_values["projectile_speed"]),
         armed=bool(effect_values.get("armed", True)),
         metadata=metadata,
@@ -399,12 +418,18 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
         )
         return
     if action.kind == "sniper_ultimate_line":
+        action.range = action.origin.distance_to(
+            _bounded_endpoint(action.origin, action.direction, action.range)
+        )
         hits = _targets_in_line(match, action.owner_id, action.origin, action.direction, action.range, 10.0)
         for _, target_kind, target_id in hits:
             apply_damage(match, action.owner_id, target_kind, target_id, _scaled_action_damage(match, action, target_kind, target_id))
         _next_effect(match, "sniper_ultimate_line", action, remaining=0.30, max_distance=action.range)
         return
     if action.kind == "guardian_arc":
+        action.range = action.origin.distance_to(
+            _bounded_endpoint(action.origin, action.direction, action.range)
+        )
         half_angle = math.radians(float(action.metadata.get("angle", 100)) / 2)
         for target_kind, target_id, position, _ in _target_entries(match, action.owner_id):
             offset = position - action.origin
@@ -430,8 +455,10 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
         active_mines = [effect for effect in match.effects if effect.owner_id == action.owner_id and effect.kind == "mine"]
         if len(active_mines) >= 2:
             match.effects.remove(active_mines[0])
-        landing = clamp_position(
-            action.origin + action.direction * (action.max_distance or action.range),
+        landing = _bounded_endpoint(
+            action.origin,
+            action.direction,
+            action.max_distance or action.range,
             config.MINE_PROJECTILE_RADIUS,
         )
         distance = action.origin.distance_to(landing)
@@ -476,21 +503,32 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
         if owner is None:
             return
         start = owner.position.copy()
+        landing = _bounded_endpoint(start, action.direction, action.max_distance, owner.radius)
+        action.origin = start.copy()
+        action.max_distance = start.distance_to(landing)
         owner.invulnerability_timer = action.duration
-        owner.position = clamp_position(start + action.direction * action.max_distance, owner.radius)
+        owner.position = landing
         for _, target_kind, target_id in _targets_in_line(match, action.owner_id, start, action.direction, action.max_distance, 28.0):
             apply_damage(match, action.owner_id, target_kind, target_id, _scaled_action_damage(match, action, target_kind, target_id))
         _next_effect(match, "hunter_dash", action, remaining=0.65)
         return
     if action.kind == "gravity_cage":
-        action.origin = clamp_position(action.origin, 0.0)
+        distance = action.max_distance or action.range
+        if distance > 0:
+            action.origin = _bounded_endpoint(action.origin, action.direction, distance)
+            action.max_distance = 0.0
+        else:
+            action.origin = clamp_position(action.origin, 0.0)
         _next_effect(match, "gravity_cage", action, remaining=action.duration)
         return
     if action.kind == "tactical_dash":
         owner = _get_target(match, "player", action.owner_id)
         if owner is not None:
+            landing = _bounded_endpoint(owner.position, action.direction, action.max_distance, owner.radius)
+            action.origin = owner.position.copy()
+            action.max_distance = owner.position.distance_to(landing)
             owner.invulnerability_timer = action.duration
-            owner.position = clamp_position(owner.position + action.direction * action.max_distance, owner.radius)
+            owner.position = landing
         _next_effect(match, "dash", action, remaining=0.45)
         return
     if action.kind == "tactical_shield":
@@ -501,7 +539,12 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
         _next_effect(match, "shield", action, remaining=action.duration)
         return
     if action.kind == "tactical_control":
-        action.origin = clamp_position(action.origin, 0.0)
+        distance = action.max_distance or action.range
+        if distance > 0:
+            action.origin = _bounded_endpoint(action.origin, action.direction, distance)
+            action.max_distance = 0.0
+        else:
+            action.origin = clamp_position(action.origin, 0.0)
         _next_effect(match, "control_zone", action, remaining=action.duration)
 
 
@@ -593,8 +636,8 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
         owner = _get_target(match, "player", effect.owner_id)
         if owner is None or not owner.alive:
             continue
-        if effect.kind in {"breach_cone", "guardian_arc", "guardian_guard", "shield"}:
-            # 近戰／護盾／施放標記以施放者為錨點；飛行物則固定使用自己的位置。
+        if effect.kind in {"guardian_guard", "shield"}:
+            # 防禦效果跟隨施放者；攻擊效果則固定使用自己的施放座標。
             effect.position = owner.position.copy()
         if effect.kind in projectile_kinds:
             effect.remaining -= delta_time
@@ -730,7 +773,7 @@ def _update_effects(match: MatchState, inputs: dict[int, InputState], delta_time
             effect.direction = owner.aim_direction.normalized() if owner.aim_direction.length() else effect.direction
             effect.remaining -= delta_time
             effect.tick_timer -= delta_time
-            while effect.tick_timer <= 0 and effect.remaining > -0.01:
+            while effect.tick_timer <= 0 and effect.remaining > 0:
                 beam_action = CombatAction(
                     kind="beam",
                     owner_id=effect.owner_id,
@@ -795,6 +838,13 @@ def update_monsters(match: MatchState, delta_time: float) -> None:
         if monster.position.distance_to(target.position) <= monster.radius + target.radius and monster.attack_timer <= 0:
             apply_damage(match, None, "player", target.player_id, config.MONSTER_CONTACT_DAMAGE)
             monster.attack_timer = config.MONSTER_ATTACK_INTERVAL
+
+
+def _remove_dead_player_effects(match: MatchState) -> None:
+    """同一更新週期內死亡的玩家不得留下尚未完成的技能效果。"""
+
+    living_player_ids = {player.player_id for player in match.players if player.alive}
+    match.effects = [effect for effect in match.effects if effect.owner_id in living_player_ids]
 
 
 def place_dummy_in_extraction(match: MatchState) -> None:
@@ -917,18 +967,41 @@ def update_world(match: MatchState, inputs: dict[int, InputState], delta_time: f
 
     if match.phase != MatchPhase.PLAYING:
         return
+    previous_elapsed = max(0.0, min(match.duration, match.elapsed_time))
+    if previous_elapsed >= match.duration:
+        # 時間已經結束的狀態不應再接受一幀輸入；只補做一次最終勝負裁決。
+        winner_id = (
+            resolve_extraction_winner(match.players, match.extraction_required_time)
+            if previous_elapsed >= match.extraction_start_time
+            else None
+        )
+        if winner_id is not None:
+            match.winner_id = winner_id
+            match.phase = MatchPhase.VICTORY
+        else:
+            resolve_match_timeout(match)
+        update_camera(match)
+        return
+
     dt = max(0.0, min(config.MAX_DELTA_TIME, delta_time))
-    match.elapsed_time = min(match.duration, match.elapsed_time + dt)
+    dt = min(dt, match.duration - previous_elapsed)
+    match.elapsed_time = previous_elapsed + dt
     _update_player_lifecycle(match, dt)
     _handle_human_actions(match, inputs.get(0, InputState()), dt)
     _update_effects(match, inputs, dt)
     update_monsters(match, dt)
+    _remove_dead_player_effects(match)
     extraction_active = match.elapsed_time >= match.extraction_start_time
+    extraction_dt = (
+        dt
+        if previous_elapsed >= match.extraction_start_time
+        else max(0.0, match.elapsed_time - match.extraction_start_time)
+    )
     for player in match.players:
         update_extraction_progress(
             player,
             match.extraction_zone,
-            dt,
+            extraction_dt,
             extraction_active,
             match.extraction_required_time,
         )

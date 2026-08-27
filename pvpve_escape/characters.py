@@ -261,7 +261,7 @@ def create_ultimate_action(player: PlayerState, aim_direction: Vector2) -> Comba
         return CombatAction("hunter_dash", player.player_id, player.position.copy(), direction, damage=parameters.get("ultimate_damage", 50.0), max_distance=parameters.get("ultimate_distance", 360.0), duration=parameters.get("ultimate_invulnerability", 0.5))
     if player.character_id == CharacterId.CONTROLLER:
         control_duration = calculate_control_duration(player, parameters.get("ultimate_duration", 3.0))
-        return CombatAction("gravity_cage", player.player_id, player.position.copy() + direction * 220.0, direction, radius=parameters.get("ultimate_radius", 190.0), duration=control_duration, metadata={"slow": parameters.get("ultimate_slow", 0.7), "root": calculate_control_duration(player, parameters.get("ultimate_root", 0.75))})
+        return CombatAction("gravity_cage", player.player_id, player.position.copy(), direction, max_distance=220.0, radius=parameters.get("ultimate_radius", 190.0), duration=control_duration, metadata={"slow": parameters.get("ultimate_slow", 0.7), "root": calculate_control_duration(player, parameters.get("ultimate_root", 0.75))})
     return CombatAction("siphon_burst", player.player_id, player.position.copy(), direction, damage=parameters.get("ultimate_damage", 60.0), radius=parameters.get("ultimate_radius", 220.0), metadata={"heal_ratio": parameters.get("heal_ratio", 0.5)})
 
 
@@ -283,4 +283,4 @@ def create_tactical_action(player: PlayerState, aim_direction: Vector2, move_dir
     if player.tactical_id == TacticalId.SHIELD:
         return CombatAction("tactical_shield", player.player_id, player.position.copy(), direction, duration=definition.parameters.get("duration", 2.0), projectile_speed=0.0, metadata={"absorb": definition.parameters.get("absorb", 60.0)})
     radius = definition.parameters.get("radius", 100.0)
-    return CombatAction("tactical_control", player.player_id, player.position.copy() + direction * radius, direction, radius=radius, duration=calculate_control_duration(player, definition.parameters.get("duration", 1.5)), projectile_speed=0.0, metadata={"slow": definition.parameters.get("slow", 0.6)})
+    return CombatAction("tactical_control", player.player_id, player.position.copy(), direction, radius=radius, max_distance=radius, duration=calculate_control_duration(player, definition.parameters.get("duration", 1.5)), projectile_speed=0.0, metadata={"slow": definition.parameters.get("slow", 0.6)})

@@ -113,6 +113,44 @@ class TraditionalChineseFontTests(unittest.TestCase):
         self.assertFalse(after_focus_release.primary_pressed)
         self.assertFalse(after_focus_release.primary_released)
 
+    def test_non_playing_phase_blocks_held_skill_until_a_new_press(self) -> None:
+        controller = HumanController()
+        player_position = Vector2(500, 500)
+
+        with patch("pygame.mouse.get_pressed", return_value=(True, False, False)):
+            initial = controller.collect(
+                [pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1)],
+                Vector2(),
+                player_position,
+                MatchPhase.PLAYING,
+            )
+            self.assertTrue(initial.primary_held)
+
+            controller.collect([], Vector2(), player_position, MatchPhase.CHARACTER_SELECT)
+            blocked = controller.collect([], Vector2(), player_position, MatchPhase.PLAYING)
+
+        self.assertFalse(blocked.primary_pressed)
+        self.assertFalse(blocked.primary_held)
+
+        with patch("pygame.mouse.get_pressed", return_value=(False, False, False)):
+            controller.collect(
+                [pygame.event.Event(pygame.MOUSEBUTTONUP, button=1)],
+                Vector2(),
+                player_position,
+                MatchPhase.PLAYING,
+            )
+
+        with patch("pygame.mouse.get_pressed", return_value=(True, False, False)):
+            resumed = controller.collect(
+                [pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1)],
+                Vector2(),
+                player_position,
+                MatchPhase.PLAYING,
+            )
+
+        self.assertTrue(resumed.primary_pressed)
+        self.assertTrue(resumed.primary_held)
+
     def test_live_skill_input_changes_ultimate_and_control_state(self) -> None:
         controller = HumanController()
 

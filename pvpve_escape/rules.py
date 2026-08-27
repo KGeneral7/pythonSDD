@@ -246,9 +246,17 @@ def update_extraction_progress(
     if not active or not player.alive:
         player.extraction_progress = 0.0
     elif extraction_zone.contains(player.position):
-        player.extraction_progress = min(
-            max(0.0, required_time),
+        target_time = max(0.0, float(required_time))
+        next_progress = min(
+            target_time,
             player.extraction_progress + max(0.0, delta_time),
+        )
+        # 讓 239.99 + 0.01 這類合法邊界不因二進位浮點誤差停在
+        # 9.999999...，確保時間到同幀的撤離勝負裁決可重現。
+        player.extraction_progress = (
+            target_time
+            if next_progress >= target_time - 1e-9
+            else next_progress
         )
     else:
         player.extraction_progress = 0.0

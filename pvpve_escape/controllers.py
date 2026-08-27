@@ -71,7 +71,7 @@ class HumanController:
                 elif event.button == 3:
                     button_down["ultimate"] = True
                 continue
-            if event.type == pygame.MOUSEBUTTONUP and phase == MatchPhase.PLAYING:
+            if event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
                     button_up["primary"] = True
                 elif event.button == 3:
@@ -112,6 +112,9 @@ class HumanController:
         if phase != MatchPhase.PLAYING:
             for name in self._held:
                 self._held[name] = False
+                # 選角／結算期間不應把仍按住的技能鍵帶進下一個生命週期；
+                # 若此幀已收到真正放開事件，則解除封鎖，允許下一次重新按下。
+                self._blocked_until_release[name] = not button_up[name]
             return state
 
         keys = pygame.key.get_pressed()
