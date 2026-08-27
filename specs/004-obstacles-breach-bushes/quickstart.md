@@ -138,4 +138,4 @@
 - 已完成：依使用者確認的 JSON 更新 `config.py` 與 [map-layout-draft.json](map-layout-draft.json)；全部紅框物件保留。
 - 已完成：`rendering.draw_terrain` 接入正式 `draw_match` → `draw_world` 地圖層，無頭 Pygame 確認完整世界的 45 個牆/草叢矩形，以及不同相機位置的正式 1280×720 畫面都可繪出對應物件。
 - 已完成：牆體碰撞、直線/飛行阻擋、Breacher 終極技能/DASH 破壞、破陣者主要技能阻擋、草叢觀看者隱藏、戰鬥恢復、入口煙霧與效能驗證。
-- 已完成：T036 的本次遠端分支推送、[PR #4](https://github.com/KGeneral7/pythonSDD/pull/4)、版本發布、合併與文件回填；`2f3383f` 已進入 `main`，`v0.2.0` 已發布；文件同步 [PR #5](https://github.com/KGeneral7/pythonSDD/pull/5) 亦已合併。三個遠端開發分支已刪除；本地 `codex/004-obstacles-breach-bushes` 與 `codex/docs-v0.2.0-release` 經一般 `git branch -d` 檢查因 squash 後非 `main` ancestry 而保留，未使用 `-D`。原始 PR #3／`v0.1.0` 僅作既有功能基線記錄。
+- 已完成：T036 所涵蓋的遠端分支推送、[PR #4](https://github.com/KGeneral7/pythonSDD/pull/4)、版本發布、合併與文件回填；`2f3383f` 已進入 `main`，`v0.2.0` 已發布；文件同步 [PR #5](https://github.com/KGeneral7/pythonSDD/pull/5) 亦已合併。三個遠端開發分支已刪除；T036 的本地分支清理則因 `codex/004-obstacles-breach-bushes` 與 `codex/docs-v0.2.0-release` 在 squash 後不是 `main` ancestry，遭一般 `git branch -d` 安全檢查拒絕，未使用 `-D`，故保留。原始 PR #3／`v0.1.0` 僅作既有功能基線記錄。
