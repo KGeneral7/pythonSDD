@@ -209,5 +209,5 @@ T018 先集中建立 `pvpve_escape/tests/test_game_features.py` 的戰鬥回歸�
 - 所有 T001 至 T027 均完成並勾選，且每個使用者故事的檢查點測試通過。
 - `quickstart.md` 的完整測試、編譯、差異格式與手動遊戲驗證均有實際結果。
 - FR-001 至 FR-017、SC-001 至 SC-008 與三種怪物回歸情境都有可追溯的測試或手動證據。
-- 功能分支與 `specs/007-monster-navigation-wander/` 文件保持一致；PR #13 已合併並發布 `v0.4.0`。本地 `codex/007-monster-navigation-wander` 分支目前仍保留，待發布流程安全清理。
+- 功能分支與 `specs/007-monster-navigation-wander/` 文件保持一致；PR #13 已合併並發布 `v0.4.0`，T027 後續修正已納入待合併的 [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14)。本地 `codex/007-monster-navigation-wander` 分支目前仍保留，待發布流程安全清理。
 - Phase 8 的 T027 已修正砲台蟲牆角／封閉區卡住問題；新增的厚牆內偏好點、長牆轉角 clearance 與封閉區回歸案例均通過，完整測試共 229 項通過。

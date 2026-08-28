@@ -32,7 +32,7 @@
 - 聚焦 `test_navigation`、`test_game_features` 與 `test_terrain`：71 項通過。
 - `python -m compileall -q pvpve_escape`、`git diff --check`：通過。
 - 120 幀暖機後量測 600 幀，約 6.703 秒完成，平均 89.51 FPS；量測期間沒有 PNG 載入，且低於 120 FPS 上限。
-- 正式布局仍為 36 個厚牆格、22 個薄牆格、92 個草叢格，共 150 個 100×100 格；PR 尚未建立。
+- 正式布局仍為 36 個厚牆格、22 個薄牆格、92 個草叢格，共 150 個 100×100 格；已建立非 draft [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14)，待合併。
 
 ## 砲台蟲牆角修正後回歸（2026-08-28）
 

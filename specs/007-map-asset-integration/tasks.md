@@ -227,4 +227,4 @@
 ## 目前交付狀態
 
 - 所有 T001 至 T027 均已完成；目前工作樹已以 `v0.4.0`／PR #13 的 `main` 為基準完成整合。
-- 地圖功能尚未建立新的 PR；PR 前需只提交本功能的程式、素材、測試與 `specs/007-map-asset-integration/` 文件。
+- 地圖功能已建立非 draft [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14)；提交只包含本功能的程式、素材、測試與 SDD 文件，並排除既有工作區無關檔案。

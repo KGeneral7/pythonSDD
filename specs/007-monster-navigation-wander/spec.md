@@ -8,7 +8,7 @@
 
 **本次發布版本**：`v0.4.0`
 
-**狀態**：核心功能已發布（[PR #13](https://github.com/KGeneral7/pythonSDD/pull/13) 已合併至 `main`，合併提交為 `2313bf89de3f0407b3c2b1c38f4b8b1e58d34a54`；[v0.4.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.4.0) 已發布）；砲台蟲牆角卡住的 T027 後續修正已在目前工作樹完成，待後續 PR 整合。
+**狀態**：核心功能已發布（[PR #13](https://github.com/KGeneral7/pythonSDD/pull/13) 已合併至 `main`，合併提交為 `2313bf89de3f0407b3c2b1c38f4b8b1e58d34a54`；[v0.4.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.4.0) 已發布）；砲台蟲牆角卡住的 T027 後續修正已在目前工作樹完成，並納入待合併的 [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14)。
 
 **輸入**：使用者描述：「改善小怪卡牆；牆破壞後重新讀取並修改小怪路徑；加入小怪遊蕩功能。」並依先前確認的方案採用營地警戒、520px 無牆視線偵測、全部怪物類型共用繞牆行為。
 
