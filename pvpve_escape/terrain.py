@@ -86,15 +86,21 @@ def inflate_rect(rect: WorldRect, radius: float) -> WorldRect:
     )
 
 
-def circle_intersects_rect(center: Vector2, radius: float, rect: WorldRect) -> bool:
-    """以最近點距離檢查圓形和軸對齊矩形是否接觸或重疊。"""
+def _circle_rect_distance_squared(center: Vector2, rect: WorldRect) -> float:
+    """回傳圓心到軸對齊矩形最近點的距離平方。"""
 
     closest_x = max(rect.left, min(center.x, rect.right))
     closest_y = max(rect.top, min(center.y, rect.bottom))
     dx = center.x - closest_x
     dy = center.y - closest_y
+    return dx * dx + dy * dy
+
+
+def circle_intersects_rect(center: Vector2, radius: float, rect: WorldRect) -> bool:
+    """以最近點距離檢查圓形和軸對齊矩形是否接觸或重疊。"""
+
     safe_radius = max(0.0, float(radius))
-    return dx * dx + dy * dy <= safe_radius * safe_radius + config.TERRAIN_GEOMETRY_EPSILON
+    return _circle_rect_distance_squared(center, rect) <= safe_radius * safe_radius + config.TERRAIN_GEOMETRY_EPSILON
 
 
 def _segment_entry_fraction(start: Vector2, end: Vector2, rect: WorldRect) -> float | None:
@@ -348,6 +354,50 @@ def _move_axis(
     return Vector2(coordinate, position.y) if axis == "x" else Vector2(position.x, coordinate)
 
 
+def _slide_after_diagonal_collision(
+    hit: TerrainHitResult,
+    movement: Vector2,
+    radius: float,
+    obstacles: Iterable[TerrainObstacle],
+) -> Vector2:
+    """斜向撞牆後保留剩餘切線位移，避免貼牆時每幀停在原地。"""
+
+    if hit.obstacle is None:
+        return hit.position.copy()
+
+    movement_length = movement.length()
+    if movement_length <= config.TERRAIN_GEOMETRY_EPSILON:
+        return hit.position.copy()
+
+    expanded = inflate_rect(hit.obstacle.bounds, radius)
+    face_epsilon = max(config.TERRAIN_GEOMETRY_EPSILON * 10, 1e-5)
+    on_vertical_face = (
+        abs(hit.position.x - expanded.left) <= face_epsilon
+        or abs(hit.position.x - expanded.right) <= face_epsilon
+    )
+    on_horizontal_face = (
+        abs(hit.position.y - expanded.top) <= face_epsilon
+        or abs(hit.position.y - expanded.bottom) <= face_epsilon
+    )
+
+    if on_vertical_face and not on_horizontal_face:
+        blocked_axis = "x"
+    elif on_horizontal_face and not on_vertical_face:
+        blocked_axis = "y"
+    else:
+        # 牆角同時命中兩個面時，選擇位移較大的軸作為阻擋軸，
+        # 保留另一軸滑動；相等時固定先阻擋 X，避免穿過牆角。
+        blocked_axis = "x" if abs(movement.x) >= abs(movement.y) else "y"
+
+    remaining_ratio = max(0.0, min(1.0, 1.0 - hit.distance / movement_length))
+    if blocked_axis == "x":
+        tangent = Vector2(0.0, movement.y * remaining_ratio)
+        return _move_axis(hit.position, tangent, radius, obstacles, "y")
+
+    tangent = Vector2(movement.x * remaining_ratio, 0.0)
+    return _move_axis(hit.position, tangent, radius, obstacles, "x")
+
+
 def move_circle_with_obstacles(
     position: Vector2,
     movement: Vector2,
@@ -371,7 +421,12 @@ def move_circle_with_obstacles(
             radius,
         )
         if diagonal_hit.blocked:
-            return diagonal_hit.position.copy()
+            return _slide_after_diagonal_collision(
+                diagonal_hit,
+                movement,
+                radius,
+                obstacle_list,
+            )
     after_x = _move_axis(position, movement, radius, obstacle_list, "x")
     return _move_axis(after_x, Vector2(0.0, movement.y), radius, obstacle_list, "y")
 

@@ -480,7 +480,7 @@ class TraditionalChineseFontTests(unittest.TestCase):
         _apply_action(match, action)
         update_match(match, InputState(), 0.05)
         sniper_effect = next(effect for effect in match.effects if effect.kind == "sniper_line")
-        self.assertEqual(sniper_effect.previous_position.tuple(), (500.0, 260.0))
+        self.assertEqual(sniper_effect.previous_position.tuple(), (300.0, 180.0))
         self.assertNotEqual(sniper_effect.position.tuple(), sniper_effect.previous_position.tuple())
         rendering.draw_match(pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT)), match)
 
