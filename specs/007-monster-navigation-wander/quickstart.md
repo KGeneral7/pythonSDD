@@ -54,7 +54,7 @@ python -m unittest pvpve_escape.tests.test_game_features pvpve_escape.tests.test
 - `python -m unittest discover -s pvpve_escape/tests -p "test_*.py"`：229 項通過；包含新增的三個砲台蟲牆角／封閉區回歸案例。
 - `python -m compileall -q pvpve_escape` 與 `git diff --check`：通過。
 - 固定地圖抽樣 20 個偏好距離點落入牆體的案例，200 次更新後失敗數為 0；主迴圈上限仍為 120 FPS。
-- 最新效能量測：120 幀暖機、600 幀、約 8.438 秒、71.11 FPS；量測期間沒有 PNG 載入，且高於 55 FPS 門檻。
+- 最新效能量測：120 幀暖機、600 幀、約 6.578 秒、91.21 FPS；量測期間沒有 PNG 載入，且高於 55 FPS 門檻。
 - 發布收尾：[PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 已 squash merge 至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並發布 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)。
 
 ## 純邏輯驗收情境
