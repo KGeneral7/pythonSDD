@@ -49,6 +49,7 @@ git diff --check
 
 - 地圖整合後新增三個砲台蟲牆角／封閉區回歸案例；完整 unittest 更新為 229 項通過，地圖素材與 150 個獨立地形格驗證仍通過。
 - 固定效能測試：120 幀暖機後量測 600 幀，約 8.438 秒、71.11 FPS；量測期間沒有 PNG 載入，且低於 120 FPS 上限。
+- 發布收尾：[PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 已 squash merge 至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並發布 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)。
 
 測試若需要清除模組級地圖素材快取，可在 Python 測試生命週期中呼叫：
 

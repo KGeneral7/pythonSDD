@@ -151,7 +151,7 @@ find_grid_path(start, goal, radius, obstacles) -> tuple[Vector2, ...] | None
 ## 實作後狀態（2026-08-28）
 
 - PR #13 已合併至 `main`，並發布為 `v0.4.0`；目前功能程式位於該發布基準中。
-- 後續 007 地圖素材整合與 T027 回歸修正已在 `codex/007-map-asset-integration` 完成，並納入待合併的 [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14)；相關地圖驗證結果以該功能文件為準。
+- 後續 007 地圖素材整合與 T027 回歸修正已在 `codex/007-map-asset-integration` 完成，並透過 [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) squash merge 至 `main`（合併提交 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`），包含於 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)；相關地圖驗證結果以該功能文件為準。
 
 ## T027：砲台蟲牆角／封閉區修正後狀態（2026-08-28）
 

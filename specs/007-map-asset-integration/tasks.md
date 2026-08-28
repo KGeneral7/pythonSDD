@@ -227,4 +227,4 @@
 ## 目前交付狀態
 
 - 所有 T001 至 T027 均已完成；目前工作樹已以 `v0.4.0`／PR #13 的 `main` 為基準完成整合。
-- 地圖功能已建立非 draft [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14)；提交只包含本功能的程式、素材、測試與 SDD 文件，並排除既有工作區無關檔案。
+- 地圖功能已透過非 draft [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) squash merge 至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並發布 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)；提交只包含本功能的程式、素材、測試與 SDD 文件，並排除既有工作區無關檔案。

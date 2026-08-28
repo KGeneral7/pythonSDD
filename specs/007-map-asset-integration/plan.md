@@ -205,4 +205,4 @@ pvpve_escape/
 - 007 地圖素材功能已在目前工作樹完成，正式地形為 36 個厚牆格、22 個薄牆格與 92 個草叢格，共 150 個 100×100 格。
 - 完整 unittest 共 229 項通過；`compileall` 與 `git diff --check` 通過，包含後續砲台蟲牆角／封閉區回歸測試。
 - 固定場景在 120 幀暖機後量測 600 幀，約 8.438 秒完成，平均 71.11 FPS；量測期間沒有 PNG 磁碟讀取。
-- 已建立非 draft [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14)，目前等待合併；本文件、素材與測試均已納入，工作樹中的無關檔案已排除。
+- 非 draft [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 已 squash merge 至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並發布 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)；本文件、素材與測試均已納入，工作樹中的無關檔案已排除。
