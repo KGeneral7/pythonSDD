@@ -8,9 +8,9 @@
 
 **基準發布版本**：`v0.3.0`
 
-**本次預定發布版本**：`v0.3.1`
+**本次發布版本**：`v0.3.1`
 
-**狀態**：原始 HUD 功能已於 [PR #9](https://github.com/KGeneral7/pythonSDD/pull/9) squash merge 至 `main`，並發布 [v0.3.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.0)；本次 viewport 修正已通過完整自動化回歸、headless 啟動、SDD 分析與人工測試，預定隨 `v0.3.1` 交付。
+**狀態**：原始 HUD 功能已於 [PR #9](https://github.com/KGeneral7/pythonSDD/pull/9) squash merge 至 `main`，並發布 [v0.3.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.0)；本次 viewport 修正已由 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10) squash merge 至 `main`（合併 commit `e9aa3b466ef197bba312d30c11b23dd7703b31fc`），完整自動化回歸、headless 啟動、SDD 分析與人工測試均通過，並隨 [v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1) 發布。
 
 **輸入**：使用者需求：移除戰鬥畫面左上角固定 GUI，將玩家血量、彈藥、配件、大招能量與強化資訊移到玩家頭上並隨玩家移動；其他玩家只顯示名稱、編號與血量，自己的完整戰鬥資訊只讓自己看見；攻擊相關提示放在選角頁。
 

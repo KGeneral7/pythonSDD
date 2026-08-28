@@ -69,4 +69,10 @@ git diff --check
 
 ## 分支狀態
 
-Spec Kit 規格資料夾與原始功能分支均使用 `006-overhead-player-hud` 識別字；原始功能已由 [PR #9](https://github.com/KGeneral7/pythonSDD/pull/9) squash merge 至 `main`，並發布 [v0.3.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.0)。本次 viewport 邊界修正使用由 `main` 建立的 `codex/fix-offscreen-player-hud` 分支，預定發布為 `v0.3.1`，僅修改既有 `rendering.py`、渲染測試、版本與對應 SDD 文件；視野離開/返回情境已由使用者完成人工確認，結果無問題。
+Spec Kit 規格資料夾與原始功能分支均使用 `006-overhead-player-hud` 識別字；原始功能已由 [PR #9](https://github.com/KGeneral7/pythonSDD/pull/9) squash merge 至 `main`，並發布 [v0.3.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.0)。本次 viewport 邊界修正使用由 `main` 建立的 `codex/fix-offscreen-player-hud` 分支，已由 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10) squash merge 至 `main`（合併 commit `e9aa3b466ef197bba312d30c11b23dd7703b31fc`），並發布為 [v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1)；視野離開/返回情境已由使用者完成人工確認，結果無問題。
+
+## 發布紀錄（2026-08-28）
+
+- PR：[PR #10](https://github.com/KGeneral7/pythonSDD/pull/10) 已 squash merge。
+- 合併 commit：`e9aa3b466ef197bba312d30c11b23dd7703b31fc`。
+- Release：[v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1)。
