@@ -8,7 +8,9 @@
 
 **本次發布版本**：`v0.4.0`
 
-**狀態**：核心功能已發布（[PR #13](https://github.com/KGeneral7/pythonSDD/pull/13) 已合併至 `main`，合併提交為 `2313bf89de3f0407b3c2b1c38f4b8b1e58d34a54`；[v0.4.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.4.0) 已發布）；砲台蟲牆角卡住的 T027 後續修正已透過 [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 合併至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並包含於 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)。
+**後續修正版**：`v0.5.1`
+
+**狀態**：核心功能已發布（[PR #13](https://github.com/KGeneral7/pythonSDD/pull/13) 已合併至 `main`，合併提交為 `2313bf89de3f0407b3c2b1c38f4b8b1e58d34a54`；[v0.4.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.4.0) 已發布）；砲台蟲牆角卡住的 T027 後續修正已透過 [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 合併至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並包含於 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)。120 FPS 上限命名與文件同步修正已由 [PR #15](https://github.com/KGeneral7/pythonSDD/pull/15) 合併，並發布 [v0.5.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.1)。
 
 **輸入**：使用者描述：「改善小怪卡牆；牆破壞後重新讀取並修改小怪路徑；加入小怪遊蕩功能。」並依先前確認的方案採用營地警戒、520px 無牆視線偵測、全部怪物類型共用繞牆行為。
 

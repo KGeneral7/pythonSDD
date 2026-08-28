@@ -57,6 +57,12 @@ python -m unittest pvpve_escape.tests.test_game_features pvpve_escape.tests.test
 - 最新效能量測：120 幀暖機、600 次更新／繪製（600 不是 FPS）、約 6.578 秒、91.21 FPS；量測期間沒有 PNG 載入，且高於 55 FPS 門檻。
 - 發布收尾：[PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 已 squash merge 至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並發布 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)。
 
+## 120 FPS 上限明確化後回歸（2026-08-28）
+
+- `config.MAX_FPS` 固定為 120；正式遊戲與地圖編輯器共用此上限，`FPS` 僅為相容別名。
+- 完整 unittest：229 項通過；最新 600 次更新／繪製量測為 67.84 FPS，600 是量測次數，不是執行期上限。
+- [PR #15](https://github.com/KGeneral7/pythonSDD/pull/15) 已 squash merge，並發布 [v0.5.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.1)。
+
 ## 純邏輯驗收情境
 
 以下情境應由 `pvpve_escape/tests/test_navigation.py` 與怪物更新測試自動化：

@@ -8,7 +8,7 @@
 
 **基準版本**：`v0.4.0`（PR #13 合併後的 `main`）
 
-**狀態**：已實作並發布（[PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 已 squash merge 至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`；[v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0) 已發布）
+**狀態**：已實作並發布（[PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 已 squash merge 至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`；[v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0) 已發布）。後續 120 FPS 上限與文件同步修正由 [PR #15](https://github.com/KGeneral7/pythonSDD/pull/15) 合併，並發布 [v0.5.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.1)。
 
 **輸入**：使用者需求：根據剛剛的方案啟動 SDD；將目前的地面、薄牆、厚牆與草叢圖片套用到遊戲，並讓每個地形格都是獨立的 100×100px 物件。
 

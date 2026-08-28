@@ -159,3 +159,4 @@ find_grid_path(start, goal, radius, obstacles) -> tuple[Vector2, ...] | None
 - `navigation.py` 的首段安全檢查允許實際碰撞安全的怪物離開額外 4px clearance，並用既有實體半徑線段掃掠阻止真正穿牆。
 - 新增三個牆角／封閉區回歸案例：偏好位置在厚牆內、由多格長牆轉角離開 clearance，以及偏好位置安全但被四面厚牆封閉；三者均確認 200 次 0.05 秒更新內可繼續移動、到達偏好距離容許帶且沒有牆體重疊。
 - 修正後聚焦導航／怪物／地形測試共 74 項通過；完整測試共 229 項通過，固定地圖效能量測為 120 幀暖機、600 次更新／繪製（600 不是 FPS）、約 6.578 秒、91.21 FPS。
+- 後續 120 FPS 上限命名與文件同步修正由 [PR #15](https://github.com/KGeneral7/pythonSDD/pull/15) 合併，並發布 [v0.5.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.1)；600 仍只代表量測次數。

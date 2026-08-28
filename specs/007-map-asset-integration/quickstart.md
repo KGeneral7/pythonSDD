@@ -53,6 +53,13 @@ git diff --check
 - 固定效能測試：120 幀暖機後量測 600 次更新／繪製（600 不是 FPS），約 6.578 秒、91.21 FPS；量測期間沒有 PNG 載入，且低於 120 FPS 上限。
 - 發布收尾：[PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 已 squash merge 至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並發布 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)。
 
+## 120 FPS 上限明確化後驗證（2026-08-28）
+
+- `config.MAX_FPS` 為 120；正式遊戲與地圖編輯器的 `clock.tick` 都使用此上限，`FPS` 僅保留為相容別名。
+- 完整 unittest：229 項通過；`compileall` 與 `git diff --check`：通過。
+- 最新效能量測：暖機 120 幀、量測 600 次更新／繪製，約 8.844 秒、67.84 FPS；600 是量測次數，執行期上限仍為 120 FPS。
+- [PR #15](https://github.com/KGeneral7/pythonSDD/pull/15) 已 squash merge，並發布 [v0.5.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.1)。
+
 測試若需要清除模組級地圖素材快取，可在 Python 測試生命週期中呼叫：
 
 ~~~python

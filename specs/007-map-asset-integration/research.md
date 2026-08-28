@@ -105,3 +105,4 @@
 - 圖片快取、完整 Surface blit、缺圖備援、單格破壞與後續砲台蟲牆角／封閉區回歸均已有自動化測試；目前完整測試共 229 項通過。
 - 目前主迴圈上限為 120 FPS；最新固定效能量測結果為 91.21 FPS，符合至少 55 FPS 的驗收門檻。
 - 發布結果：[PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 已合併至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並發布 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)。
+- 後續修正將程式入口統一使用 `config.MAX_FPS = 120`，並明確區分效能測試的 600 次量測；[PR #15](https://github.com/KGeneral7/pythonSDD/pull/15) 已合併並發布為 [v0.5.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.1)。

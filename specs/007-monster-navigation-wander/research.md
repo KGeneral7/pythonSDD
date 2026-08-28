@@ -94,3 +94,4 @@
 - 聚焦導航／怪物／地形測試共 74 項通過；完整測試共 229 項通過。
 - 固定地圖效能量測為 120 幀暖機、600 次更新／繪製（600 不是 FPS）、約 6.578 秒、91.21 FPS；沒有新增套件或每幀圖片讀取。
 - 發布結果：[PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 已合併至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並發布 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)。
+- 目前正式入口的畫面更新上限由 `config.MAX_FPS = 120` 統一管理；文件口徑修正由 [PR #15](https://github.com/KGeneral7/pythonSDD/pull/15) 合併並發布為 [v0.5.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.1)。

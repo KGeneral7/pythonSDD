@@ -226,5 +226,6 @@
 
 ## 目前交付狀態
 
-- 所有 T001 至 T027 均已完成；目前工作樹已以 `v0.4.0`／PR #13 的 `main` 為基準完成整合。
+- 所有 T001 至 T027 均已完成；地圖整合以 `v0.5.0`／PR #14 完成，後續 120 FPS 上限與文件同步修正已包含於 `v0.5.1`／PR #15。
 - 地圖功能已透過非 draft [PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) squash merge 至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並發布 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)；提交只包含本功能的程式、素材、測試與 SDD 文件，並排除既有工作區無關檔案。
+- [PR #15](https://github.com/KGeneral7/pythonSDD/pull/15) 已 squash merge 至 `main`，並發布 [v0.5.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.1)；`config.MAX_FPS`、執行期入口與相關文件已同步。
