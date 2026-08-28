@@ -123,7 +123,7 @@
 - `.venv\Scripts\python.exe -m compileall -q pvpve_escape`：通過。
 - `.venv\Scripts\python.exe -m unittest discover -s pvpve_escape\tests -p "test_*.py" -v`：通過，35 項測試全數通過，包含繁體中文字型、人類玩家可見性、滑鼠／Space 技能輸入、全角色技能效果、普攻輸入、狙擊投射物碰撞與大招／控場狀態回歸測試。
 - 無頭 Pygame 中文繪製 smoke test：通過，選用 `C:\WINDOWS\Fonts\msjhl.ttc`（Microsoft JhengHei）繪製「撤離區」，並確認選擇、對戰與結果畫面可正常繪製。
-- 無頭 Pygame 角色繪製 smoke test：通過，人類玩家出生於避開 HUD 的 `(500, 260)`，並以額外外框清楚標示。
+- 無頭 Pygame 角色繪製 smoke test：通過，人類玩家出生於避開 HUD 且遠離怪物區的 `(300, 180)`，並以額外外框清楚標示。
 - 無頭 Pygame 技能效果 smoke test：通過，六種角色的普攻／大招與三種戰術配件均建立對應效果並完成繪製，包含扇形、直線、護盾、位移軌跡、地雷、光束、爆發範圍與控場範圍。
 - 角色辨識與狀態顯示 smoke test：通過，選角卡片與地圖角色使用不同形狀，玩家名冊列出六名玩家／角色，玩家與小怪均顯示血條及數值。
 - 重新開始流程 smoke test：通過，結算畫面按 `R` 會回到角色／配件選擇頁，而不是直接使用上一場設定開新局。

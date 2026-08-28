@@ -11,6 +11,7 @@ from pvpve_escape.models import (
     BushState,
     CharacterId,
     ControllerType,
+    MonsterBehavior,
     ObstacleKind,
     ObstacleState,
     PlayerState,
@@ -110,6 +111,16 @@ class TerrainGeometryTests(unittest.TestCase):
 
         self.assertLessEqual(result.x, 90.0 + config.TERRAIN_GEOMETRY_EPSILON)
 
+    def test_diagonal_movement_keeps_sliding_after_contact_with_a_thick_wall(self) -> None:
+        wall = ObstacleState(1, ObstacleKind.THICK_WALL, WorldRect(900, 500, 100, 160))
+        position = Vector2(850, 480)
+
+        for _ in range(8):
+            position = move_circle_with_obstacles(position, Vector2(10, 10), 18, [wall])
+
+        self.assertLessEqual(position.x, 900.0 - 18.0 + config.TERRAIN_GEOMETRY_EPSILON)
+        self.assertGreater(position.y, 500.0)
+
     def test_each_built_terrain_collection_is_independent(self) -> None:
         first_obstacles, first_bushes = build_terrain()
         second_obstacles, second_bushes = build_terrain()
@@ -172,6 +183,23 @@ class TerrainGeometryTests(unittest.TestCase):
                 player.position.x,
                 900.0 - player.radius + config.TERRAIN_GEOMETRY_EPSILON,
             )
+
+    def test_player_diagonal_input_continues_along_a_thick_wall(self) -> None:
+        match = create_match()
+        player = match.players[0]
+        player.position = Vector2(850, 480)
+        match.obstacles = [
+            ObstacleState(1, ObstacleKind.THICK_WALL, WorldRect(900, 500, 100, 160)),
+        ]
+
+        for _ in range(10):
+            update_player_movement(player, Vector2(1, 1), 0.05, match.obstacles)
+
+        self.assertLessEqual(
+            player.position.x,
+            900.0 - player.radius + config.TERRAIN_GEOMETRY_EPSILON,
+        )
+        self.assertGreater(player.position.y, 500.0)
 
     def test_monster_movement_also_stops_at_the_same_wall_geometry(self) -> None:
         match = create_match()
@@ -304,6 +332,41 @@ class TerrainGeometryTests(unittest.TestCase):
         self.assertTrue(thin.destroyed)
         self.assertFalse(thick.destroyed)
         self.assertFalse(bush.active)
+
+    def test_world_updates_monsters_after_player_breaks_thin_wall(self) -> None:
+        match = create_match(CharacterId.BREACHER)
+        owner = match.players[0]
+        owner.position = Vector2(400, 500)
+        owner.ultimate_energy = 100.0
+        for player in match.players[1:]:
+            player.alive = False
+
+        monster = match.monsters[0]
+        monster.position = Vector2(900, 500)
+        monster.spawn_position = monster.position.copy()
+        monster.behavior = MonsterBehavior.CHASE
+        monster.target_player_id = owner.player_id
+        monster.attack_timer = 999.0
+        monster.navigation_path = [Vector2(1, 1)]
+        thin = ObstacleState(1, ObstacleKind.THIN_WALL, WorldRect(500, 450, 40, 100))
+        thick = ObstacleState(2, ObstacleKind.THICK_WALL, WorldRect(700, 450, 40, 100))
+        match.obstacles = [thin, thick]
+        monster.navigation_obstacle_signature = snapshot_obstacles(match.obstacles)
+        match.monsters = [monster]
+
+        update_world(
+            match,
+            {0: InputState(aim_direction=Vector2(1, 0), ultimate_pressed=True)},
+            0.01,
+        )
+
+        self.assertTrue(thin.destroyed)
+        self.assertTrue(thick.solid)
+        self.assertEqual(
+            monster.navigation_obstacle_signature,
+            snapshot_obstacles(match.obstacles),
+        )
+        self.assertNotIn(Vector2(1, 1), monster.navigation_path)
 
     def test_dash_breaks_only_the_first_thin_wall_then_stops_at_the_next_wall(self) -> None:
         for _ in range(20):

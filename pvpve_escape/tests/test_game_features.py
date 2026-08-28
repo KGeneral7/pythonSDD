@@ -17,13 +17,15 @@ from pvpve_escape.models import (
     AppScreen,
     CharacterId,
     MonsterType,
+    MonsterBehavior,
     ObstacleKind,
     ObstacleState,
     Vector2,
     WorldRect,
 )
 from pvpve_escape.monsters import get_monster_definition
-from pvpve_escape.world import create_match, update_world
+from pvpve_escape.terrain import circle_intersects_rect
+from pvpve_escape.world import _choose_wander_target, create_match, update_monsters, update_world
 
 
 class AutoAimHistoryTests(unittest.TestCase):
@@ -164,6 +166,14 @@ class MonsterRosterTests(unittest.TestCase):
             }
             self.assertEqual(types, set(MonsterType))
 
+    def test_monsters_start_in_wander_without_shared_navigation_state(self) -> None:
+        match = create_match()
+
+        self.assertTrue(all(monster.behavior == MonsterBehavior.WANDER for monster in match.monsters))
+        self.assertTrue(all(monster.target_player_id is None for monster in match.monsters))
+        self.assertTrue(all(not monster.navigation_path for monster in match.monsters))
+        self.assertEqual(len({id(monster.navigation_path) for monster in match.monsters}), len(match.monsters))
+
     def test_shooter_spawns_a_slow_projectile_instead_of_contact_damage(self) -> None:
         match = create_match()
         owner = match.players[0]
@@ -208,6 +218,274 @@ class MonsterRosterTests(unittest.TestCase):
             )
 
         self.assertEqual(owner.health, health_before)
+
+
+class MonsterNavigationIntegrationTests(unittest.TestCase):
+    def _prepare_wall_chase(self, monster_type: MonsterType):
+        match = create_match()
+        target = match.players[0]
+        target.position = Vector2(460, 500)
+        for player in match.players[1:]:
+            player.alive = False
+
+        monster = next(item for item in match.monsters if item.monster_type == monster_type)
+        monster.position = Vector2(420, 500)
+        monster.spawn_position = monster.position.copy()
+        monster.attack_timer = 999.0
+        match.monsters = [monster]
+        match.obstacles = []
+
+        update_monsters(match, 0.05)
+        self.assertEqual(monster.target_player_id, target.player_id)
+
+        target.position = Vector2(800, 500)
+        match.obstacles = [
+            ObstacleState(
+                obstacle_id=1,
+                kind=ObstacleKind.THICK_WALL,
+                bounds=WorldRect(600, 480, 40, 40),
+            )
+        ]
+        return match, monster, target, match.obstacles[0]
+
+    def test_each_monster_type_reaches_a_wall_blocked_target_without_jumping(self) -> None:
+        for _ in range(20):
+            for monster_type in MonsterType:
+                match, monster, target, wall = self._prepare_wall_chase(monster_type)
+                saw_navigation_path = False
+                previous_position = monster.position.copy()
+
+                for _ in range(200):
+                    update_monsters(match, 0.05)
+                    saw_navigation_path = saw_navigation_path or bool(monster.navigation_path)
+                    displacement = previous_position.distance_to(monster.position)
+                    self.assertLessEqual(
+                        displacement,
+                        monster.move_speed * 0.05 * monster.slow_multiplier
+                        + config.TERRAIN_GEOMETRY_EPSILON,
+                    )
+                    self.assertFalse(circle_intersects_rect(monster.position, monster.radius, wall.bounds))
+                    previous_position = monster.position.copy()
+
+                self.assertTrue(saw_navigation_path)
+                definition = get_monster_definition(monster_type)
+                interaction_distance = (
+                    definition.attack_range
+                    if monster_type == MonsterType.SHOOTER
+                    else monster.radius + target.radius
+                )
+                self.assertLessEqual(
+                    monster.position.distance_to(target.position),
+                    interaction_distance + config.TERRAIN_GEOMETRY_EPSILON,
+                )
+
+
+class MonsterWanderIntegrationTests(unittest.TestCase):
+    @staticmethod
+    def _isolated_monster(monster_type: MonsterType):
+        match = create_match()
+        for player in match.players:
+            player.alive = False
+        monster = next(item for item in match.monsters if item.monster_type == monster_type)
+        match.monsters = [monster]
+        monster.attack_timer = 0.0
+        match.obstacles = []
+        return match, monster
+
+    def test_each_monster_type_reaches_two_safe_distinct_wander_points_at_half_speed(self) -> None:
+        for _ in range(20):
+            for monster_type in MonsterType:
+                match, monster = self._isolated_monster(monster_type)
+                camp = config.MONSTER_CAMP_POINTS[monster.spawn_zone_id]
+                completed_points: list[Vector2] = []
+                pause_elapsed: float | None = None
+                delta_time = 0.25
+
+                for _ in range(180):
+                    previous_position = monster.position.copy()
+                    previous_behavior = monster.behavior
+                    previous_target = monster.wander_target
+                    previous_pause = monster.wander_pause_timer
+                    update_monsters(match, delta_time)
+                    displacement = previous_position.distance_to(monster.position)
+
+                    if previous_behavior == MonsterBehavior.WANDER and previous_target is not None and previous_pause <= 0.0:
+                        self.assertLessEqual(
+                            displacement,
+                            monster.move_speed
+                            * delta_time
+                            * config.MONSTER_WANDER_SPEED_RATIO
+                            * monster.slow_multiplier
+                            + config.TERRAIN_GEOMETRY_EPSILON,
+                        )
+                    if previous_target is not None and monster.wander_target is None and monster.wander_pause_timer > 0.0:
+                        completed_points.append(previous_target.copy())
+                        pause_elapsed = 0.0
+                    elif pause_elapsed is not None and previous_pause > 0.0:
+                        pause_elapsed += delta_time
+                        if monster.wander_pause_timer <= 0.0:
+                            self.assertAlmostEqual(
+                                pause_elapsed,
+                                config.MONSTER_WANDER_PAUSE,
+                                delta=delta_time,
+                            )
+                            pause_elapsed = None
+
+                    if monster.wander_target is not None:
+                        self.assertLessEqual(
+                            monster.wander_target.distance_to(camp),
+                            config.MONSTER_WANDER_RADIUS + config.TERRAIN_GEOMETRY_EPSILON,
+                        )
+                    if len(completed_points) >= 2:
+                        break
+
+                self.assertGreaterEqual(len(completed_points), 2)
+                self.assertGreater(
+                    completed_points[0].distance_to(completed_points[1]),
+                    config.MONSTER_NAVIGATION_NODE_ARRIVAL_TOLERANCE,
+                )
+                self.assertTrue(all(point.distance_to(camp) <= config.MONSTER_WANDER_RADIUS for point in completed_points[:2]))
+                self.assertFalse(match.monster_projectiles)
+
+    def test_wander_candidates_use_the_expanded_700px_radius(self) -> None:
+        match = create_match()
+        match.obstacles = []
+        monster = match.monsters[0]
+        camp = config.MONSTER_CAMP_POINTS[monster.spawn_zone_id]
+
+        candidate_distances = []
+        for _ in range(32):
+            candidate = _choose_wander_target(monster, match.obstacles)
+            self.assertIsNotNone(candidate)
+            candidate_distances.append(candidate.distance_to(camp))
+
+        self.assertGreater(max(candidate_distances), 600.0)
+        self.assertLessEqual(max(candidate_distances), config.MONSTER_WANDER_RADIUS)
+
+    def test_monster_returns_to_camp_before_wandering_and_does_not_attack(self) -> None:
+        match, monster = self._isolated_monster(MonsterType.CHASER)
+        camp = config.MONSTER_CAMP_POINTS[monster.spawn_zone_id]
+        monster.position = camp + Vector2(760, 0)
+        monster.spawn_position = monster.position.copy()
+        health_before = [player.health for player in match.players]
+
+        for _ in range(120):
+            update_monsters(match, 0.25)
+            if monster.behavior == MonsterBehavior.WANDER:
+                break
+
+        self.assertEqual(monster.behavior, MonsterBehavior.WANDER)
+        self.assertLessEqual(
+            monster.position.distance_to(camp),
+            config.MONSTER_CAMP_ARRIVAL_RADIUS + config.TERRAIN_GEOMETRY_EPSILON,
+        )
+        self.assertEqual(health_before, [player.health for player in match.players])
+        self.assertFalse(match.monster_projectiles)
+
+    def test_respawn_clears_chase_wander_and_navigation_state(self) -> None:
+        match, monster = self._isolated_monster(MonsterType.BRUTE)
+        monster.alive = False
+        monster.respawn_timer = 0.0
+        monster.position = Vector2(1200, 700)
+        monster.behavior = MonsterBehavior.RETURN
+        monster.target_player_id = 4
+        monster.navigation_path = [Vector2(100, 100)]
+        monster.navigation_goal = Vector2(100, 100)
+        monster.navigation_obstacle_signature = ((7, ObstacleKind.THICK_WALL, WorldRect(100, 100, 40, 40)),)
+        monster.navigation_repath_timer = 4.0
+        monster.wander_target = Vector2(200, 200)
+        monster.wander_index = 12
+        monster.wander_pause_timer = 0.5
+
+        update_monsters(match, 0.05)
+
+        self.assertTrue(monster.alive)
+        self.assertEqual(monster.behavior, MonsterBehavior.WANDER)
+        self.assertIsNone(monster.target_player_id)
+        self.assertFalse(monster.navigation_path)
+        self.assertIsNone(monster.navigation_goal)
+        self.assertEqual(monster.navigation_obstacle_signature, ())
+        self.assertEqual(monster.navigation_repath_timer, 0.0)
+        self.assertIsNone(monster.wander_target)
+        self.assertEqual(monster.wander_index, 0)
+        self.assertEqual(monster.wander_pause_timer, 0.0)
+        self.assertEqual(monster.position.tuple(), monster.spawn_position.tuple())
+
+
+class MonsterCombatRegressionTests(unittest.TestCase):
+    @staticmethod
+    def _isolated_monster(monster_type: MonsterType):
+        match = create_match()
+        target = match.players[0]
+        target.position = Vector2(500, 500)
+        for player in match.players[1:]:
+            player.alive = False
+        monster = next(item for item in match.monsters if item.monster_type == monster_type)
+        match.monsters = [monster]
+        match.obstacles = []
+        monster.attack_timer = 0.0
+        monster.behavior = MonsterBehavior.CHASE
+        monster.target_player_id = target.player_id
+        return match, monster, target
+
+    def test_chaser_and_brute_keep_contact_attack_only(self) -> None:
+        for monster_type, contact_distance in (
+            (MonsterType.CHASER, config.MONSTER_RADIUS + config.PLAYER_RADIUS),
+            (MonsterType.BRUTE, config.MONSTER_BRUTE_RADIUS + config.PLAYER_RADIUS),
+        ):
+            match, monster, target = self._isolated_monster(monster_type)
+            monster.position = target.position - Vector2(contact_distance, 0)
+            health_before = target.health
+
+            update_monsters(match, 0.05)
+
+            definition = get_monster_definition(monster_type)
+            self.assertEqual(target.health, health_before - definition.attack_damage)
+            self.assertFalse(match.monster_projectiles)
+
+    def test_shooter_keeps_attack_range_preferred_range_and_slow_projectile(self) -> None:
+        match, monster, target = self._isolated_monster(MonsterType.SHOOTER)
+        definition = get_monster_definition(MonsterType.SHOOTER)
+        monster.position = target.position - Vector2(definition.preferred_range, 0)
+
+        update_monsters(match, 0.05)
+
+        self.assertEqual(len(match.monster_projectiles), 1)
+        projectile = match.monster_projectiles[0]
+        self.assertEqual(projectile.projectile_speed, definition.projectile_speed)
+        self.assertEqual(projectile.max_distance, definition.projectile_range)
+        self.assertLess(projectile.projectile_speed, config.MONSTER_SHOOTER_PROJECTILE_BASE_SPEED)
+
+        match.monster_projectiles.clear()
+        monster.attack_timer = 0.0
+        monster.position = target.position - Vector2(definition.attack_range + 10.0, 0)
+        before = monster.position.copy()
+        update_monsters(match, 0.05)
+
+        self.assertFalse(match.monster_projectiles)
+        self.assertGreater(monster.position.x, before.x)
+
+    def test_wander_and_return_never_attack(self) -> None:
+        match, monster, target = self._isolated_monster(MonsterType.CHASER)
+        target.position = Vector2(1200, 1300)
+        monster.behavior = MonsterBehavior.WANDER
+        monster.target_player_id = None
+        monster.position = config.MONSTER_CAMP_POINTS[monster.spawn_zone_id].copy()
+        monster.spawn_position = monster.position.copy()
+        monster.attack_timer = 0.0
+        health_before = target.health
+        update_monsters(match, 0.05)
+        self.assertEqual(target.health, health_before)
+        self.assertFalse(match.monster_projectiles)
+
+        monster.behavior = MonsterBehavior.RETURN
+        monster.target_player_id = None
+        monster.wander_target = None
+        monster.position = config.MONSTER_CAMP_POINTS[monster.spawn_zone_id] + Vector2(220, 0)
+        monster.attack_timer = 0.0
+        update_monsters(match, 0.05)
+        self.assertEqual(target.health, health_before)
+        self.assertFalse(match.monster_projectiles)
 
 
 class IntroScreenTests(unittest.TestCase):

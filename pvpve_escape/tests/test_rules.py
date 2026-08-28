@@ -628,12 +628,41 @@ class AimAndProjectileRuleTests(unittest.TestCase):
             self.assertEqual(player.max_health, expected_health)
 
         self.assertEqual(config.MONSTER_HEALTH, 85.0)
-        self.assertEqual(config.MONSTER_SPEED, 95.0)
+        self.assertEqual(
+            config.MONSTER_SPEED,
+            config.PLAYER_BASE_SPEED * config.MONSTER_CHASER_PLAYER_SPEED_RATIO,
+        )
+        self.assertEqual(
+            config.MONSTER_SPEED_INCREASE_MULTIPLIER,
+            config.MONSTER_SPEED / config.MONSTER_BASE_SPEED,
+        )
+        self.assertEqual(
+            config.MONSTER_SHOOTER_SPEED,
+            config.MONSTER_SHOOTER_BASE_SPEED * config.MONSTER_SPEED_INCREASE_MULTIPLIER,
+        )
+        self.assertEqual(
+            config.MONSTER_BRUTE_SPEED,
+            config.MONSTER_BRUTE_BASE_SPEED * config.MONSTER_SPEED_INCREASE_MULTIPLIER,
+        )
+        self.assertEqual(config.MONSTER_WANDER_RADIUS, 700.0)
         self.assertEqual(config.MONSTER_CONTACT_DAMAGE, 12.0)
         self.assertEqual(config.MONSTER_ATTACK_INTERVAL, 0.8)
         self.assertEqual(config.MONSTER_RADIUS, 16.0)
         self.assertEqual(config.MONSTER_RESPAWN_DELAY, 6.0)
         self.assertEqual(len(create_match().monsters), config.MONSTER_CAMP_COUNT * config.MONSTERS_PER_CAMP)
+
+    def test_player_zero_spawn_is_at_least_200px_from_every_monster_camp(self) -> None:
+        match = create_match()
+        player_spawn = match.players[0].spawn_position
+
+        self.assertGreaterEqual(
+            min(player_spawn.distance_to(camp) for camp in config.MONSTER_CAMP_POINTS),
+            200.0,
+        )
+        self.assertGreaterEqual(
+            min(player_spawn.distance_to(monster.spawn_position) for monster in match.monsters),
+            200.0,
+        )
 
     def test_non_channel_primary_only_casts_on_release(self) -> None:
         expected_effects = {

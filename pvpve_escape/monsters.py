@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from . import config
-from .models import MonsterDefinition, MonsterState, MonsterType, Vector2
+from .models import MonsterBehavior, MonsterDefinition, MonsterState, MonsterType, Vector2
 
 
 MONSTER_DEFINITIONS: dict[MonsterType, MonsterDefinition] = {
@@ -76,4 +76,5 @@ def create_monster_state(
         health=definition.max_health,
         move_speed=definition.move_speed,
         monster_type=monster_type,
+        behavior=MonsterBehavior.WANDER,
     )

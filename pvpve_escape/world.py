@@ -24,6 +24,7 @@ from .models import (
     DamageEvent,
     MatchPhase,
     MatchState,
+    MonsterBehavior,
     MonsterProjectileState,
     MonsterState,
     MonsterType,
@@ -37,6 +38,7 @@ from .models import (
     WorldRect,
 )
 from .monsters import MONSTER_SPAWN_ORDER, create_monster_state, get_monster_definition
+from .navigation import find_grid_path, is_navigation_point_safe, world_to_grid
 from .terrain import (
     build_terrain,
     destroy_bushes_on_segment,
@@ -1285,61 +1287,377 @@ def _update_monster_projectiles(match: MatchState, delta_time: float) -> None:
     match.monster_projectiles = retained
 
 
+def _monster_destination(monster: MonsterState, target: PlayerState) -> Vector2 | None:
+    """依怪物類型取得追擊目的地；砲台蟲維持既有偏好距離策略。"""
+
+    offset = target.position - monster.position
+    distance = offset.length()
+    definition = get_monster_definition(monster.monster_type)
+    if distance <= config.TERRAIN_GEOMETRY_EPSILON:
+        return None
+    if monster.monster_type != MonsterType.SHOOTER:
+        if distance <= monster.radius + target.radius:
+            return None
+        return target.position.copy()
+    if definition.preferred_range <= 0.0:
+        return target.position.copy()
+    if abs(distance - definition.preferred_range) <= 36.0:
+        return None
+    away_from_target = (monster.position - target.position).normalized()
+    if not away_from_target.length():
+        away_from_target = Vector2(1.0, 0.0)
+    return target.position + away_from_target * definition.preferred_range
+
+
+def _monster_camp_center(monster: MonsterState) -> Vector2:
+    """依出生區索引取得營地中心，不在怪物狀態中複製可能過期的座標。"""
+
+    camp_index = max(0, min(monster.spawn_zone_id, len(config.MONSTER_CAMP_POINTS) - 1))
+    return config.MONSTER_CAMP_POINTS[camp_index].copy()
+
+
+def _clear_monster_navigation(monster: MonsterState) -> None:
+    """清除路徑快取；呼叫端會在需要時立即把重算計時器歸零。"""
+
+    monster.navigation_path.clear()
+    monster.navigation_goal = None
+    monster.navigation_repath_timer = 0.0
+
+
+def _clear_monster_wander(monster: MonsterState) -> None:
+    """清除只屬於遊蕩狀態的點與停留計時。"""
+
+    monster.wander_target = None
+    monster.wander_pause_timer = 0.0
+
+
+def _set_monster_behavior(monster: MonsterState, behavior: MonsterBehavior) -> None:
+    """切換狀態時清理上一種目的地，避免沿用失效的路徑或遊蕩點。"""
+
+    if monster.behavior == behavior:
+        return
+    monster.behavior = behavior
+    _clear_monster_navigation(monster)
+    if behavior != MonsterBehavior.WANDER:
+        _clear_monster_wander(monster)
+
+
+def _player_by_id(match: MatchState, player_id: int | None) -> PlayerState | None:
+    if player_id is None:
+        return None
+    return next(
+        (player for player in match.players if player.player_id == player_id and player.alive),
+        None,
+    )
+
+
+def _find_new_monster_target(
+    monster: MonsterState,
+    players: list[PlayerState],
+    obstacles: list[ObstacleState],
+) -> PlayerState | None:
+    """只從存活、距離內且中心線沒有固體牆的玩家中選最近者。"""
+
+    candidates: list[tuple[float, int, PlayerState]] = []
+    for player in players:
+        if not player.alive:
+            continue
+        distance = monster.position.distance_to(player.position)
+        if distance > config.MONSTER_AGGRO_RADIUS + config.TERRAIN_GEOMETRY_EPSILON:
+            continue
+        if first_obstacle_on_segment(monster.position, player.position, obstacles).blocked:
+            continue
+        candidates.append((distance, player.player_id, player))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda item: (item[0], item[1]))[2]
+
+
+def _update_monster_target_state(
+    match: MatchState,
+    monster: MonsterState,
+    living_players: list[PlayerState],
+) -> PlayerState | None:
+    """執行一次目標保留／取得／解除，維持三狀態的單向更新語意。"""
+
+    if monster.behavior == MonsterBehavior.CHASE:
+        target = _player_by_id(match, monster.target_player_id)
+        if (
+            target is not None
+            and monster.position.distance_to(target.position)
+            <= config.MONSTER_AGGRO_RADIUS + config.TERRAIN_GEOMETRY_EPSILON
+        ):
+            return target
+        monster.target_player_id = None
+        _set_monster_behavior(monster, MonsterBehavior.RETURN)
+        return None
+
+    monster.target_player_id = None
+    target = _find_new_monster_target(monster, living_players, match.obstacles)
+    if target is not None:
+        # 只有取得目標這一刻檢查視線；進入 CHASE 後由 A* 處理牆後追擊。
+        monster.target_player_id = target.player_id
+        _set_monster_behavior(monster, MonsterBehavior.CHASE)
+        return target
+
+    if monster.behavior == MonsterBehavior.RETURN:
+        return None
+
+    camp = _monster_camp_center(monster)
+    if monster.position.distance_to(camp) > config.MONSTER_WANDER_RADIUS + config.TERRAIN_GEOMETRY_EPSILON:
+        _set_monster_behavior(monster, MonsterBehavior.RETURN)
+    return None
+
+
+def _refresh_monster_path(
+    monster: MonsterState,
+    destination: Vector2,
+    obstacles: list[ObstacleState],
+    force: bool = False,
+    shared_cache: dict | None = None,
+) -> bool:
+    """在目的地格、快取不存在或重算計時器到期時建立安全節點序列。"""
+
+    destination_cell = world_to_grid(destination)
+    goal_cell = world_to_grid(monster.navigation_goal) if monster.navigation_goal is not None else None
+    needs_repath = (
+        force
+        or monster.navigation_goal is None
+        or goal_cell != destination_cell
+        or monster.navigation_repath_timer <= 0.0
+    )
+    if not needs_repath:
+        return bool(monster.navigation_path)
+
+    result = find_grid_path(
+        monster.position,
+        destination,
+        monster.radius,
+        obstacles,
+        allow_goal_fallback=monster.behavior == MonsterBehavior.CHASE,
+        shared_cache=shared_cache,
+    )
+    monster.navigation_goal = destination.copy()
+    monster.navigation_path = list(result or ())
+    monster.navigation_repath_timer = (
+        config.MONSTER_NAVIGATION_REPATH_INTERVAL
+        if result is not None
+        else config.MONSTER_NAVIGATION_RETRY_INTERVAL
+    )
+    return result is not None
+
+
+def _move_monster_along_path(
+    monster: MonsterState,
+    delta_time: float,
+    obstacles: list[ObstacleState],
+    speed_ratio: float = 1.0,
+) -> None:
+    """沿下一個安全節點移動，實際位移仍交給既有碰撞函式。"""
+
+    if monster.root_timer > 0.0:
+        return
+    tolerance = config.MONSTER_NAVIGATION_NODE_ARRIVAL_TOLERANCE
+    while monster.navigation_path and monster.position.distance_to(monster.navigation_path[0]) <= tolerance:
+        monster.navigation_path.pop(0)
+    if not monster.navigation_path:
+        return
+    node = monster.navigation_path[0]
+    direction = (node - monster.position).normalized()
+    if not direction.length():
+        monster.navigation_path.pop(0)
+        return
+    max_distance = max(0.0, delta_time) * monster.move_speed * max(0.0, speed_ratio) * monster.slow_multiplier
+    movement = direction * min(max_distance, monster.position.distance_to(node))
+    next_position = move_circle_with_obstacles(
+        monster.position,
+        movement,
+        monster.radius,
+        obstacles,
+    )
+    next_position = clamp_position(next_position, monster.radius)
+    actual_movement = next_position - monster.position
+    monster.position = next_position
+    if actual_movement.length() > config.TERRAIN_GEOMETRY_EPSILON:
+        monster.aim_direction = actual_movement.normalized()
+
+
+def _choose_wander_target(monster: MonsterState, obstacles: list[ObstacleState]) -> Vector2 | None:
+    """以怪物 ID 與序號產生可重現的營地安全候選點。"""
+
+    camp = _monster_camp_center(monster)
+    minimum_radius = 48.0
+    maximum_radius = max(minimum_radius, float(config.MONSTER_WANDER_RADIUS))
+    radius_span = maximum_radius - minimum_radius
+    for _ in range(32):
+        index = monster.wander_index
+        monster.wander_index += 1
+        angle_degrees = (monster.monster_id * 97 + index * 137) % 360
+        radius_fraction = ((monster.monster_id * 29 + index * 71) % 997) / 996.0
+        radius = minimum_radius + radius_span * radius_fraction
+        angle = math.radians(angle_degrees)
+        candidate = camp + Vector2(math.cos(angle) * radius, math.sin(angle) * radius)
+        if (
+            camp.distance_to(candidate) <= config.MONSTER_WANDER_RADIUS + config.TERRAIN_GEOMETRY_EPSILON
+            and is_navigation_point_safe(candidate, monster.radius, obstacles)
+        ):
+            return candidate
+    return None
+
+
+def _update_wandering_monster(
+    monster: MonsterState,
+    delta_time: float,
+    obstacles: list[ObstacleState],
+    shared_cache: dict | None = None,
+) -> None:
+    """更新營地遊蕩、抵達後停留與安全候選點重試。"""
+
+    if monster.wander_pause_timer > 0.0:
+        monster.wander_pause_timer = max(0.0, monster.wander_pause_timer - delta_time)
+        _clear_monster_navigation(monster)
+        return
+
+    if monster.wander_target is None:
+        if monster.navigation_repath_timer > 0.0:
+            return
+        target = _choose_wander_target(monster, obstacles)
+        if target is None:
+            monster.navigation_repath_timer = config.MONSTER_NAVIGATION_RETRY_INTERVAL
+            return
+        monster.wander_target = target
+        _clear_monster_navigation(monster)
+
+    target = monster.wander_target
+    if target is None:
+        return
+    _refresh_monster_path(monster, target, obstacles, shared_cache=shared_cache)
+    _move_monster_along_path(
+        monster,
+        delta_time,
+        obstacles,
+        config.MONSTER_WANDER_SPEED_RATIO,
+    )
+    if monster.position.distance_to(target) <= config.MONSTER_NAVIGATION_NODE_ARRIVAL_TOLERANCE:
+        monster.wander_target = None
+        monster.wander_pause_timer = config.MONSTER_WANDER_PAUSE
+        _clear_monster_navigation(monster)
+
+
+def _update_returning_monster(
+    monster: MonsterState,
+    delta_time: float,
+    obstacles: list[ObstacleState],
+    allow_arrival: bool = True,
+    shared_cache: dict | None = None,
+) -> None:
+    """沿營地中心安全路徑返營，距中心 64px 內才回到遊蕩。"""
+
+    camp = _monster_camp_center(monster)
+    if (
+        allow_arrival
+        and monster.position.distance_to(camp)
+        <= config.MONSTER_CAMP_ARRIVAL_RADIUS + config.TERRAIN_GEOMETRY_EPSILON
+    ):
+        _set_monster_behavior(monster, MonsterBehavior.WANDER)
+        return
+    _refresh_monster_path(monster, camp, obstacles, shared_cache=shared_cache)
+    _move_monster_along_path(monster, delta_time, obstacles)
+    if (
+        allow_arrival
+        and monster.position.distance_to(camp)
+        <= config.MONSTER_CAMP_ARRIVAL_RADIUS + config.TERRAIN_GEOMETRY_EPSILON
+    ):
+        _set_monster_behavior(monster, MonsterBehavior.WANDER)
+
+
+def _reset_monster_after_respawn(match: MatchState, monster: MonsterState) -> None:
+    """重生時清除上一條生命的追擊、路徑、遊蕩與牆體快取。"""
+
+    monster.alive = True
+    monster.health = monster.max_health
+    monster.respawn_timer = 0.0
+    monster.position = monster.spawn_position.copy()
+    monster.target_player_id = None
+    monster.behavior = MonsterBehavior.WANDER
+    monster.navigation_path.clear()
+    monster.navigation_goal = None
+    monster.navigation_obstacle_signature = ()
+    monster.navigation_repath_timer = 0.0
+    monster.wander_target = None
+    monster.wander_index = 0
+    monster.wander_pause_timer = 0.0
+    monster.attack_timer = 0.0
+    monster.last_damage_player_id = None
+    monster.aim_direction = Vector2(1.0, 0.0)
+    clear_monster_effects(monster)
+    match.monster_projectiles = [
+        projectile
+        for projectile in match.monster_projectiles
+        if projectile.source_monster_id != monster.monster_id
+    ]
+
+
 def update_monsters(match: MatchState, delta_time: float) -> None:
-    """更新三種怪物的追擊、保持射程、攻擊與固定延遲重生。"""
+    """更新牆體快照、三狀態導航、戰鬥定位與固定延遲重生。"""
 
     dt = max(0.0, delta_time)
+    obstacle_signature = snapshot_obstacles(match.obstacles)
+    living_players = [player for player in match.players if player.alive]
+    if match.navigation_cache_obstacle_signature != obstacle_signature:
+        match.navigation_cache.clear()
+        match.navigation_cache_obstacle_signature = obstacle_signature
+    navigation_cache = match.navigation_cache
     for monster in match.monsters:
         update_monster_timers(monster, dt)
         if not monster.alive:
             monster.respawn_timer -= dt
-            if monster.respawn_timer <= 0:
-                monster.alive = True
-                monster.health = monster.max_health
-                monster.position = monster.spawn_position.copy()
-                monster.target_player_id = None
-                monster.attack_timer = 0.0
-                monster.last_damage_player_id = None
-                monster.aim_direction = Vector2(1.0, 0.0)
-                clear_monster_effects(monster)
-                match.monster_projectiles = [
-                    projectile
-                    for projectile in match.monster_projectiles
-                    if projectile.source_monster_id != monster.monster_id
-                ]
-            continue
-        living_players = [player for player in match.players if player.alive]
-        if not living_players:
+            if monster.respawn_timer <= 0.0:
+                _reset_monster_after_respawn(match, monster)
             continue
 
-        target = min(living_players, key=lambda player: monster.position.distance_to(player.position))
-        monster.target_player_id = target.player_id
-        offset = target.position - monster.position
-        distance = offset.length()
-        definition = get_monster_definition(monster.monster_type)
-        monster.attack_timer -= dt
+        monster.attack_timer = max(0.0, monster.attack_timer - dt)
+        monster.navigation_repath_timer = max(0.0, monster.navigation_repath_timer - dt)
+        terrain_changed = monster.navigation_obstacle_signature != obstacle_signature
+        if terrain_changed:
+            # 牆體狀態只在本次更新開頭取樣；差異優先於一般 0.25 秒重算。
+            _clear_monster_navigation(monster)
+            monster.navigation_obstacle_signature = obstacle_signature
 
-        if monster.root_timer <= 0.0 and distance > 0.0:
-            if monster.monster_type == MonsterType.SHOOTER:
-                if distance > definition.preferred_range + 36.0:
-                    move_direction = offset.normalized()
-                elif distance < max(0.0, definition.preferred_range - 36.0):
-                    move_direction = (offset * -1.0).normalized()
-                else:
-                    move_direction = Vector2()
+        previous_behavior = monster.behavior
+        target = _update_monster_target_state(match, monster, living_players)
+        # 先處理狀態，再決定目的地；因此舊的遊蕩點或追擊路徑不會跨狀態殘留。
+        if target is not None and monster.behavior == MonsterBehavior.CHASE:
+            destination = _monster_destination(monster, target)
+            if destination is None:
+                _clear_monster_navigation(monster)
             else:
-                move_direction = offset.normalized() if distance > monster.radius + target.radius else Vector2()
-            if move_direction.length():
-                monster.aim_direction = move_direction.copy()
-                movement = move_direction * monster.move_speed * dt * monster.slow_multiplier
-                monster.position = move_circle_with_obstacles(
-                    monster.position,
-                    movement,
-                    monster.radius,
+                _refresh_monster_path(
+                    monster,
+                    destination,
                     match.obstacles,
+                    force=terrain_changed,
+                    shared_cache=navigation_cache,
                 )
-                monster.position = clamp_position(monster.position, monster.radius)
+                _move_monster_along_path(monster, dt, match.obstacles)
+        elif monster.behavior == MonsterBehavior.RETURN:
+            _update_returning_monster(
+                monster,
+                dt,
+                match.obstacles,
+                allow_arrival=not (
+                    previous_behavior == MonsterBehavior.CHASE
+                    and monster.behavior == MonsterBehavior.RETURN
+                ),
+                shared_cache=navigation_cache,
+            )
+        elif monster.behavior == MonsterBehavior.WANDER:
+            _update_wandering_monster(monster, dt, match.obstacles, navigation_cache)
 
+        # 遊蕩與返營只移動，不執行任何攻擊；只有仍鎖定的 CHASE 可進入既有戰鬥規則。
+        if target is None or monster.behavior != MonsterBehavior.CHASE or not target.alive:
+            continue
+        definition = get_monster_definition(monster.monster_type)
         distance_after_move = monster.position.distance_to(target.position)
         if monster.monster_type == MonsterType.SHOOTER:
             if distance_after_move <= definition.attack_range and monster.attack_timer <= 0.0:

@@ -71,6 +71,14 @@ class MonsterType(str, Enum):
     BRUTE = "BRUTE"
 
 
+class MonsterBehavior(str, Enum):
+    """小怪在單局中的移動與戰鬥狀態。"""
+
+    WANDER = "WANDER"
+    CHASE = "CHASE"
+    RETURN = "RETURN"
+
+
 @dataclass
 class Vector2:
     """不依賴畫面的二維向量；所有位置都以世界座標保存。"""
@@ -418,6 +426,17 @@ class MonsterState:
     alive: bool = True
     monster_type: MonsterType = MonsterType.CHASER
     aim_direction: Vector2 = field(default_factory=lambda: Vector2(1.0, 0.0))
+    # 導航與行為欄位追加在既有欄位之後，保留舊版 positional 建構相容性。
+    behavior: MonsterBehavior = MonsterBehavior.WANDER
+    navigation_path: list[Vector2] = field(default_factory=list)
+    navigation_goal: Vector2 | None = None
+    navigation_obstacle_signature: tuple[tuple[int, ObstacleKind, WorldRect], ...] = field(
+        default_factory=tuple
+    )
+    navigation_repath_timer: float = 0.0
+    wander_target: Vector2 | None = None
+    wander_index: int = 0
+    wander_pause_timer: float = 0.0
 
 
 @dataclass
@@ -469,3 +488,6 @@ class MatchState:
     # 本功能欄位追加在現有工作樹欄位之後，保留 positional 建構順序。
     obstacles: list[ObstacleState] = field(default_factory=list)
     bushes: list[BushState] = field(default_factory=list)
+    # 同一場比賽共用導航幾何快取，避免牆角觸發多隻怪物重複探索整張地圖。
+    navigation_cache: dict = field(default_factory=dict)
+    navigation_cache_obstacle_signature: tuple = field(default_factory=tuple)
