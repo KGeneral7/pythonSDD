@@ -813,6 +813,12 @@ class OverheadRenderingTests(unittest.TestCase):
         match.monsters = []
         match.effects = []
         match.monster_projectiles = []
+        match.camera.position = Vector2()
+        for index, player in enumerate(match.players):
+            player.position = Vector2(
+                100.0 + (index % 3) * 400.0,
+                150.0 + (index // 3) * 350.0,
+            )
         match.players[3].alive = False
         observed: list[tuple[int, bool]] = []
 
@@ -825,6 +831,55 @@ class OverheadRenderingTests(unittest.TestCase):
         self.assertEqual({player_id for player_id, _ in observed}, set(range(6)))
         self.assertEqual({player_id for player_id, private in observed if private}, {0})
         self.assertEqual({player_id for player_id, private in observed if not private}, set(range(1, 6)))
+
+    def test_other_player_overlay_is_culled_outside_viewport_and_returns_when_visible(self) -> None:
+        match = create_match()
+        match.bushes = []
+        match.monsters = []
+        match.effects = []
+        match.monster_projectiles = []
+        surface = self.make_surface()
+        match.camera.position = Vector2()
+        match.players[0].position = Vector2(640.0, 360.0)
+        match.players[1].position = Vector2(900.0, 360.0)
+
+        observed: list[int] = []
+
+        def capture_overlay(_surface, player, _point, *, show_private_info) -> None:
+            observed.append(player.player_id)
+
+        def draw_and_capture() -> None:
+            observed.clear()
+            with patch.object(rendering, "_draw_player_overlay", side_effect=capture_overlay):
+                rendering.draw_world(surface, match, viewer_id=0)
+
+        draw_and_capture()
+        self.assertIn(1, observed)
+        self.assertIn(0, observed)
+
+        offscreen_positions = (
+            Vector2(-1.0, 360.0),
+            Vector2(surface.get_width(), 360.0),
+            Vector2(640.0, -1.0),
+            Vector2(640.0, surface.get_height()),
+        )
+        for _ in range(5):
+            for position in offscreen_positions:
+                match.players[1].position = position
+                draw_and_capture()
+                self.assertNotIn(1, observed)
+                self.assertIn(0, observed)
+
+        match.players[1].position = Vector2(900.0, 360.0)
+        draw_and_capture()
+        self.assertIn(1, observed)
+        self.assertIn(0, observed)
+
+        match.players[1].alive = False
+        match.players[1].position = Vector2(-1.0, 360.0)
+        draw_and_capture()
+        self.assertNotIn(1, observed)
+        self.assertIn(0, observed)
 
     def test_selection_page_contains_role_attack_and_operation_hints(self) -> None:
         from pvpve_escape.characters import get_all_character_definitions

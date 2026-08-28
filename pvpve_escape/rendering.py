@@ -367,6 +367,15 @@ def _screen_point(match: MatchState, position: Vector2) -> tuple[int, int]:
     return round(point.x), round(point.y)
 
 
+def _is_screen_point_visible(
+    surface: pygame.Surface,
+    point: tuple[int, int],
+) -> bool:
+    """確認玩家的螢幕錨點仍在目前視野內。"""
+
+    return surface.get_rect().collidepoint(point)
+
+
 def _polar_point(center: tuple[int, int], angle: float, distance: float) -> tuple[int, int]:
     return (
         round(center[0] + math.cos(angle) * distance),
@@ -1249,13 +1258,18 @@ def draw_world(
         if not is_player_visible_to_viewer(player, viewer_id, match.bushes):
             continue
         point = _screen_point(match, player.position)
+        show_overhead = (
+            player.player_id == viewer_id
+            or _is_screen_point_visible(surface, point)
+        )
         color = config.PLAYER_COLORS[player.player_id % len(config.PLAYER_COLORS)]
         show_private_info = player.player_id == viewer_id
         if not player.alive:
             pygame.draw.circle(surface, config.DANGER_COLOR, point, config.PLAYER_DRAW_RADIUS, 2)
             pygame.draw.line(surface, config.DANGER_COLOR, (point[0] - 9, point[1] - 9), (point[0] + 9, point[1] + 9), 2)
             pygame.draw.line(surface, config.DANGER_COLOR, (point[0] + 9, point[1] - 9), (point[0] - 9, point[1] + 9), 2)
-            _draw_player_overlay(surface, player, point, show_private_info=show_private_info)
+            if show_overhead:
+                _draw_player_overlay(surface, player, point, show_private_info=show_private_info)
             continue
         _draw_role_shape(surface, point, config.PLAYER_DRAW_RADIUS, color, player.character_id, player.aim_direction)
         if player.player_id == 0:
@@ -1264,7 +1278,8 @@ def draw_world(
         aim_end = player.position + player.aim_direction.normalized() * 26
         pygame.draw.line(surface, config.TEXT_COLOR, point, _screen_point(match, aim_end), 2)
         draw_text(surface, str(player.player_id), (point[0] - 4, point[1] - 8), 16, config.PANEL_COLOR)
-        _draw_player_overlay(surface, player, point, show_private_info=show_private_info)
+        if show_overhead:
+            _draw_player_overlay(surface, player, point, show_private_info=show_private_info)
         _draw_control_status(
             surface,
             point,
