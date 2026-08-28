@@ -111,7 +111,7 @@ class MapEditor:
         self.drag_current: tuple[float, float] | None = None
         self.move_offset: tuple[float, float] | None = None
         self.drag_mode: str | None = None
-        self.status_message = "目前尚未決定地形，畫面從空白配置開始。"
+        self.status_message = "可用 1／2／3 放置 100×100 地形格，拖曳配置完成後按 S 儲存。"
         self.status_until = 0
         self.running = True
 
@@ -423,7 +423,7 @@ class MapEditor:
             self._draw_item(index, item)
         self._draw_preview()
         _text(self.screen, self.title_font, "PvPvE 地圖配置預覽", (MAP_MARGIN, 24), config.TEXT_COLOR)
-        _text(self.screen, self.small_font, "背景標記為既有出生點、怪物區與中央撤離區；地形尚未套用到正式遊戲。", (MAP_MARGIN + 300, 34), config.MUTED_TEXT_COLOR)
+        _text(self.screen, self.small_font, "背景標記為既有出生點、怪物區與中央撤離區；正式遊戲使用 100×100 單格地形素材。", (MAP_MARGIN + 300, 34), config.MUTED_TEXT_COLOR)
         self._draw_sidebar()
         pygame.display.flip()
 
@@ -432,7 +432,7 @@ class MapEditor:
             for event in pygame.event.get():
                 self._handle_event(event)
             self.draw()
-            self.clock.tick(60)
+            self.clock.tick(config.MAX_FPS)
         pygame.quit()
 
 

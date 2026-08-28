@@ -8,7 +8,11 @@ WINDOW_WIDTH = 1280
 WINDOW_HEIGHT = 720
 WORLD_WIDTH = 2400
 WORLD_HEIGHT = 1400
-FPS = 120
+# 正式遊戲與地圖編輯器共用的畫面更新上限；效能測試中的量測幀數
+# 不會改變這個執行期上限。
+MAX_FPS = 120
+# 保留既有 FPS 名稱，避免外部測試或工具匯入時失去相容性。
+FPS = MAX_FPS
 MAX_DELTA_TIME = 0.05
 
 MATCH_DURATION = 240.0

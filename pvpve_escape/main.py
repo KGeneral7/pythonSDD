@@ -56,7 +56,7 @@ class GameApplication:
                 rendering.draw_selection(self.screen, self.selected_character_index, self.selected_tactical_index)
                 pygame.display.flip()
                 continue
-            delta_time = min(config.MAX_DELTA_TIME, self.clock.tick(config.FPS) / 1000.0)
+            delta_time = min(config.MAX_DELTA_TIME, self.clock.tick(config.MAX_FPS) / 1000.0)
             if phase == AppScreen.INTRO:
                 self._update_intro(human_input)
                 if self.screen_phase == AppScreen.INTRO:

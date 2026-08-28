@@ -42,7 +42,7 @@ python -m unittest pvpve_escape.tests.test_game_features pvpve_escape.tests.test
 - 基準為 PR #13／`v0.4.0` 的 `main`；地圖整合後聚焦 `test_navigation`、`test_game_features` 與 `test_terrain` 共 71 項通過。
 - 完整 `python -m unittest discover -s pvpve_escape/tests -p "test_*.py"`：226 項通過，怪物尋路、遊蕩、地形、技能與渲染沒有回歸。
 - `python -m compileall -q pvpve_escape` 與 `git diff --check`：通過。
-- 主迴圈上限仍為 120 FPS；地圖整合固定場景在 120 幀暖機後量測 600 幀，約 6.703 秒、89.51 FPS，量測期間沒有 PNG 載入。
+- 主迴圈上限仍為 120 FPS；地圖整合固定場景在 120 幀暖機後量測 600 次更新／繪製（600 不是 FPS），約 6.703 秒、89.51 FPS，量測期間沒有 PNG 載入。
 - PR #13 的 20 次追擊、20 次遊蕩、破牆後改道、厚牆阻擋與三種怪物戰鬥差異仍以原驗證結果為準；本段只補充地圖整合後的回歸結果。
 
 ## 砲台蟲牆角修正驗證（2026-08-28）
@@ -54,7 +54,7 @@ python -m unittest pvpve_escape.tests.test_game_features pvpve_escape.tests.test
 - `python -m unittest discover -s pvpve_escape/tests -p "test_*.py"`：229 項通過；包含新增的三個砲台蟲牆角／封閉區回歸案例。
 - `python -m compileall -q pvpve_escape` 與 `git diff --check`：通過。
 - 固定地圖抽樣 20 個偏好距離點落入牆體的案例，200 次更新後失敗數為 0；主迴圈上限仍為 120 FPS。
-- 最新效能量測：120 幀暖機、600 幀、約 6.578 秒、91.21 FPS；量測期間沒有 PNG 載入，且高於 55 FPS 門檻。
+- 最新效能量測：120 幀暖機、600 次更新／繪製（600 不是 FPS）、約 6.578 秒、91.21 FPS；量測期間沒有 PNG 載入，且高於 55 FPS 門檻。
 - 發布收尾：[PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 已 squash merge 至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並發布 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)。
 
 ## 純邏輯驗收情境
