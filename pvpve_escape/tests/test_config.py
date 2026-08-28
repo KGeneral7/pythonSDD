@@ -63,7 +63,8 @@ EXPECTED_BUSH_LAYOUT = (
 
 class ConfigValueTests(unittest.TestCase):
     def test_game_frame_rate_cap_is_120_fps(self) -> None:
-        self.assertEqual(config.FPS, 120)
+        self.assertEqual(config.MAX_FPS, 120)
+        self.assertEqual(config.FPS, config.MAX_FPS)
 
     def test_gui_opacity_defaults_and_alpha_are_stable(self) -> None:
         self.assertEqual(config.GUI_OPACITY_PERCENT, 50)

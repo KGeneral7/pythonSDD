@@ -118,7 +118,7 @@
 
 **目的**：確認效能、文件、啟動與既有功能回歸，並保留可審查的完成證據。
 
-- [X] T023 [P] 在 pvpve_escape/tests/test_map_performance.py 建立 Windows、Python 3.11、Pygame、1280×720 固定場景先暖機 120 幀、再以單調時鐘量測 600 次更新與繪製的基準，使用 600 除以實際經過秒數計算平均 FPS 至少 55，記錄環境／經過秒數／平均 FPS，並驗證量測期間沒有 PNG 磁碟讀取或重複建立 Surface
+- [X] T023 [P] 在 pvpve_escape/tests/test_map_performance.py 建立 Windows、Python 3.11、Pygame、1280×720 固定場景先暖機 120 幀、再以單調時鐘量測 600 次更新與繪製的基準（600 不是 FPS），使用 600 除以實際經過秒數計算平均 FPS 至少 55，記錄環境／經過秒數／平均 FPS，並驗證量測期間沒有 PNG 磁碟讀取或重複建立 Surface
 - [X] T024 [P] 更新 specs/007-map-asset-integration/quickstart.md，補上實際測試檔名、素材快取清理方式、缺圖備援驗證與手動驗收結果記錄位置
 - [X] T025 在 pvpve_escape/tests/ 執行完整 unittest，在 pvpve_escape/ 執行 compileall，並依 specs/007-map-asset-integration/quickstart.md 核對所有自動驗證項目
 - [X] T026 在 pvpve_escape/__main__.py 啟動正式遊戲，依 quickstart.md 完成三個鏡頭位置、相鄰格破壞、厚牆、缺圖備援與重新開始手動驗收
@@ -213,7 +213,7 @@
 5. 地面、牆、草叢素材在三個鏡頭位置及部分裁切情境正確顯示。
 6. 素材缺失時仍可啟動並使用程式繪製備援。
 7. 遊戲主迴圈 FPS 上限為 120。
-8. 固定環境暖機 120 幀後，600 次更新與繪製以實際經過時間計算平均至少 55 FPS，且已記錄環境與量測結果。
+8. 固定環境暖機 120 幀後，600 次更新與繪製（600 不是 FPS）以實際經過時間計算平均至少 55 FPS，且已記錄環境與量測結果。
 9. unittest、compileall、git diff --check 與 quickstart.md 手動驗收均有結果。
 
 ## 格式驗證

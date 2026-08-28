@@ -1,7 +1,7 @@
 # 驗證快速開始：100×100 地圖素材接入遊戲
 
 **功能識別字**：007-map-asset-integration
-**適用分支**：codex/007-map-asset-integration
+**目前適用分支**：`main`（原實作分支 `codex/007-map-asset-integration` 已於 PR #14 合併後刪除）
 **目的**：在實作完成後確認四種地圖素材、100×100 單格資料、單格破壞、鏡頭裁切、備援載入與效能都符合規格。
 
 ## 前置條件
@@ -16,6 +16,8 @@
   - pvpve_escape/assets/map/thick_wall_tile.png
   - pvpve_escape/assets/map/bush_tile.png
 - 不需啟動網路服務或安裝新的第三方套件。
+
+> 效能口徑：正式遊戲與地圖編輯器的畫面更新上限都是 120 FPS；下文的 600 只代表量測更新／繪製次數，不是執行期畫面更新上限。
 
 ## 自動驗證
 
@@ -35,7 +37,7 @@ git diff --check
 - `pvpve_escape/tests/test_rendering.py`：正式素材像素、地面鋪設、破壞後畫面、鏡頭與裁切。
 - `pvpve_escape/tests/test_game_features.py`、`test_breach_cone.py`：技能逐格整合回歸。
 - `pvpve_escape/tests/test_main.py`：重新開局地形狀態重建。
-- `pvpve_escape/tests/test_map_performance.py`：120 幀暖機、600 幀更新／繪製效能基準。
+- `pvpve_escape/tests/test_map_performance.py`：120 幀暖機、600 次更新／繪製效能基準。
 
 ## 目前驗證結果（2026-08-28，rebase 後基線）
 
@@ -43,12 +45,12 @@ git diff --check
 - `python -m unittest pvpve_escape.tests.test_navigation pvpve_escape.tests.test_game_features pvpve_escape.tests.test_terrain`：71 項通過。
 - `python -m compileall -q pvpve_escape` 與 `git diff --check`：通過。
 - 正式布局：36 個厚牆格、22 個薄牆格、92 個草叢格，共 150 個 100×100 格；四種素材與缺圖備援測試均通過。
-- 效能測試：120 幀暖機後量測 600 幀，約 6.703 秒、89.51 FPS；量測期間沒有 PNG 載入。
+- 效能測試：120 幀暖機後量測 600 次更新／繪製（600 不是 FPS），約 6.703 秒、89.51 FPS；量測期間沒有 PNG 載入。
 
 ## 後續砲台蟲牆角修正後驗證（2026-08-28）
 
 - 地圖整合後新增三個砲台蟲牆角／封閉區回歸案例；完整 unittest 更新為 229 項通過，地圖素材與 150 個獨立地形格驗證仍通過。
-- 固定效能測試：120 幀暖機後量測 600 幀，約 6.578 秒、91.21 FPS；量測期間沒有 PNG 載入，且低於 120 FPS 上限。
+- 固定效能測試：120 幀暖機後量測 600 次更新／繪製（600 不是 FPS），約 6.578 秒、91.21 FPS；量測期間沒有 PNG 載入，且低於 120 FPS 上限。
 - 發布收尾：[PR #14](https://github.com/KGeneral7/pythonSDD/pull/14) 已 squash merge 至 `main`，合併提交為 `0f4d7afe47895a97268fcd32b3d785a35ee2a5aa`，並發布 [v0.5.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.5.0)。
 
 測試若需要清除模組級地圖素材快取，可在 Python 測試生命週期中呼叫：
@@ -100,7 +102,7 @@ reset_rendering_test_state()
 
 ## 效能驗收
 
-在固定 Windows、Python 3.11、Pygame、1280×720 視窗環境與固定正常地圖、角色存在的場景中，先完成 120 幀暖機，再以單調時鐘量測接續的 600 次更新與繪製；平均 FPS 以 600 除以這段實際經過秒數計算，並記錄執行環境、經過秒數與平均 FPS：
+在固定 Windows、Python 3.11、Pygame、1280×720 視窗環境與固定正常地圖、角色存在的場景中，先完成 120 幀暖機，再以單調時鐘量測接續的 600 次更新與繪製；600 是量測樣本數，不是 FPS 上限。平均 FPS 以 600 除以這段實際經過秒數計算，並記錄執行環境、經過秒數與平均 FPS：
 
 - 平均畫面更新率至少 55 FPS。
 - 正式遊戲主迴圈不會將 FPS 上限設為高於 120。
@@ -119,7 +121,7 @@ reset_rendering_test_state()
 | 單格路徑／範圍破壞與厚牆不可破壞 | FR-007、FR-008、FR-009、SC-003 |
 | 多個鏡頭位置與邊界裁切 | FR-010、SC-004 |
 | 缺圖仍可啟動 | FR-012、SC-005 |
-| 600 次更新與繪製 | SC-006 |
+| 600 次量測更新與繪製 | SC-006 |
 | 新局狀態重建 | FR-011、SC-007 |
 
 ## 問題排查
