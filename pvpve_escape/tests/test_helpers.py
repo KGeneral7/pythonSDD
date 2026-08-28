@@ -29,6 +29,16 @@ def headless_pygame() -> Iterator[None]:
             pygame.quit()
 
 
+def reset_rendering_test_state() -> None:
+    """清除渲染模組的可選資產快取，避免測試互相共享圖片狀態。"""
+
+    from pvpve_escape import rendering
+
+    clear_cache = getattr(rendering, "clear_map_asset_cache", None)
+    if clear_cache is not None:
+        clear_cache()
+
+
 def fixed_steps(
     match,
     input_state,

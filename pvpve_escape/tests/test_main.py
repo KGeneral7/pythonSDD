@@ -51,6 +51,22 @@ class GameApplicationFlowTests(unittest.TestCase):
         self.assertEqual(player.primary_charge, 0.0)
         self.assertFalse(player.ability_input_blocked)
 
+    def test_new_match_rebuilds_all_terrain_cell_states(self) -> None:
+        application = GameApplication()
+        application.start_match()
+        previous_match = application.match
+        previous_match.obstacles[0].destroyed = True
+        previous_match.bushes[0].active = False
+
+        application.restart()
+        application.start_match()
+        new_match = application.match
+
+        self.assertTrue(all(not obstacle.destroyed for obstacle in new_match.obstacles))
+        self.assertTrue(all(bush.active for bush in new_match.bushes))
+        self.assertEqual(len(new_match.obstacles), 58)
+        self.assertEqual(len(new_match.bushes), 92)
+
     def test_focus_loss_and_death_clear_channel_before_respawn(self) -> None:
         match = create_match(CharacterId.SIPHONER)
         match.monsters = []

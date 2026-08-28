@@ -23,6 +23,8 @@ from pvpve_escape.models import (
 from pvpve_escape.terrain import (
     build_terrain,
     circle_intersects_rect,
+    create_bushes,
+    create_obstacles,
     destroy_bushes_on_segment,
     destroy_terrain_in_radius,
     destroy_thin_wall_on_path,
@@ -31,9 +33,149 @@ from pvpve_escape.terrain import (
     is_player_visible_to_viewer,
     move_circle_with_obstacles,
     resolve_path_endpoint,
+    resolve_dash_path,
     snapshot_obstacles,
 )
 from pvpve_escape.world import _apply_action, _knockback, create_match, update_monsters, update_player_movement, update_world
+
+
+class NormalizedTerrainTests(unittest.TestCase):
+    def test_confirmed_terrain_is_expanded_to_independent_aligned_cells(self) -> None:
+        obstacles, bushes = build_terrain()
+
+        self.assertEqual(sum(item.kind == ObstacleKind.THICK_WALL for item in obstacles), 36)
+        self.assertEqual(sum(item.kind == ObstacleKind.THIN_WALL for item in obstacles), 22)
+        self.assertEqual(len(bushes), 92)
+        self.assertEqual(len(obstacles) + len(bushes), 150)
+
+        positions: set[tuple[int, int]] = set()
+        for item in [*obstacles, *bushes]:
+            self.assertEqual(item.bounds.width, config.TERRAIN_CELL_SIZE)
+            self.assertEqual(item.bounds.height, config.TERRAIN_CELL_SIZE)
+            self.assertEqual(item.bounds.left % config.TERRAIN_CELL_SIZE, 0)
+            self.assertEqual(item.bounds.top % config.TERRAIN_CELL_SIZE, 0)
+            self.assertGreaterEqual(item.bounds.left, 0)
+            self.assertGreaterEqual(item.bounds.top, 0)
+            self.assertLessEqual(item.bounds.right, config.WORLD_WIDTH)
+            self.assertLessEqual(item.bounds.bottom, config.WORLD_HEIGHT)
+            position = (int(item.bounds.left), int(item.bounds.top))
+            self.assertNotIn(position, positions)
+            positions.add(position)
+
+        self.assertEqual(len(positions), 150)
+
+    def test_normalization_removes_overlap_with_thick_thin_bush_priority(self) -> None:
+        from unittest.mock import patch
+
+        with patch.object(config, "OBSTACLE_LAYOUT", (("thick_wall", 0, 0, 100, 100), ("thin_wall", 0, 0, 200, 100))), patch.object(
+            config,
+            "BUSH_LAYOUT",
+            ((0, 0, 200, 100),),
+        ):
+            obstacles, bushes = build_terrain()
+
+        self.assertEqual(
+            [(item.kind, item.bounds.left, item.bounds.top) for item in obstacles],
+            [(ObstacleKind.THICK_WALL, 0, 0), (ObstacleKind.THIN_WALL, 100, 0)],
+        )
+        self.assertEqual(bushes, [])
+
+    def test_compatibility_builders_share_cross_type_deduplication(self) -> None:
+        from unittest.mock import patch
+
+        with patch.object(config, "OBSTACLE_LAYOUT", (("thin_wall", 0, 0, 100, 100),)), patch.object(
+            config,
+            "BUSH_LAYOUT",
+            ((0, 0, 100, 100), (100, 0, 100, 100)),
+        ):
+            obstacles = create_obstacles()
+            bushes = create_bushes()
+
+        self.assertEqual(len(obstacles), 1)
+        self.assertEqual(obstacles[0].bounds, WorldRect(0, 0, 100, 100))
+        self.assertEqual(len(bushes), 1)
+        self.assertEqual(bushes[0].bounds, WorldRect(100, 0, 100, 100))
+        self.assertEqual(obstacles[0].obstacle_id, 0)
+        self.assertEqual(bushes[0].bush_id, 0)
+
+
+class TerrainCellDestructionTests(unittest.TestCase):
+    def test_path_destruction_updates_only_the_first_adjacent_thin_wall(self) -> None:
+        for _ in range(20):
+            walls = [
+                ObstacleState(index, ObstacleKind.THIN_WALL, WorldRect(100 + index * 100, 0, 100, 100))
+                for index in range(3)
+            ]
+
+            removed = destroy_thin_wall_on_path(Vector2(0, 50), Vector2(450, 50), walls)
+
+            self.assertIs(removed, walls[0])
+            self.assertTrue(walls[0].destroyed)
+            self.assertFalse(walls[1].destroyed)
+            self.assertFalse(walls[2].destroyed)
+
+    def test_dash_path_reports_only_the_first_thin_wall_before_the_next_blocker(self) -> None:
+        walls = [
+            ObstacleState(1, ObstacleKind.THIN_WALL, WorldRect(600, 400, 100, 100)),
+            ObstacleState(2, ObstacleKind.THIN_WALL, WorldRect(800, 400, 100, 100)),
+        ]
+
+        landing, _, removed_ids, hit = resolve_dash_path(
+            Vector2(500, 450),
+            Vector2(1, 0),
+            500,
+            18,
+            walls,
+        )
+
+        self.assertEqual(removed_ids, (1,))
+        self.assertIsNotNone(hit)
+        self.assertLess(landing.x, 800)
+        self.assertFalse(walls[0].destroyed)
+        self.assertFalse(walls[1].destroyed)
+
+    def test_segment_destruction_updates_only_crossed_bush_cells(self) -> None:
+        bushes = [BushState(index, WorldRect(100 + index * 100, 0, 100, 100)) for index in range(3)]
+
+        removed = destroy_bushes_on_segment(Vector2(0, 50), Vector2(250, 50), bushes)
+
+        self.assertEqual(removed, bushes[:2])
+        self.assertFalse(bushes[0].active)
+        self.assertFalse(bushes[1].active)
+        self.assertTrue(bushes[2].active)
+
+    def test_radius_destruction_updates_only_intersecting_cells_and_never_thick_wall(self) -> None:
+        thin_left = ObstacleState(1, ObstacleKind.THIN_WALL, WorldRect(0, 0, 100, 100))
+        thin_center = ObstacleState(2, ObstacleKind.THIN_WALL, WorldRect(100, 0, 100, 100))
+        thin_right = ObstacleState(3, ObstacleKind.THIN_WALL, WorldRect(200, 0, 100, 100))
+        thick = ObstacleState(4, ObstacleKind.THICK_WALL, WorldRect(100, 200, 100, 100))
+        bushes = [
+            BushState(1, WorldRect(0, 200, 100, 100)),
+            BushState(2, WorldRect(100, 200, 100, 100)),
+            BushState(3, WorldRect(200, 200, 100, 100)),
+        ]
+
+        removed_walls, removed_bushes = destroy_terrain_in_radius(
+            Vector2(150, 50),
+            10,
+            [thin_left, thin_center, thin_right, thick],
+            bushes,
+        )
+
+        self.assertEqual(removed_walls, [thin_center])
+        self.assertTrue(thin_left.solid)
+        self.assertTrue(thin_right.solid)
+        self.assertFalse(thick.destroyed)
+        self.assertEqual(removed_bushes, [])
+        self.assertTrue(all(bush.active for bush in bushes))
+
+    def test_boundary_contact_keeps_existing_epsilon_policy(self) -> None:
+        left = ObstacleState(1, ObstacleKind.THIN_WALL, WorldRect(100, 0, 100, 100))
+        right = ObstacleState(2, ObstacleKind.THIN_WALL, WorldRect(200, 0, 100, 100))
+
+        removed, _ = destroy_terrain_in_radius(Vector2(200, 50), 0, [left, right], [])
+
+        self.assertEqual(removed, [left, right])
 
 
 class TerrainGeometryTests(unittest.TestCase):
@@ -130,17 +272,17 @@ class TerrainGeometryTests(unittest.TestCase):
 
         self.assertFalse(second_obstacles[0].destroyed)
         self.assertTrue(second_bushes[0].active)
-        self.assertEqual(len(first_obstacles), 18)
-        self.assertEqual(len(first_bushes), 27)
-        self.assertEqual(sum(item.kind == ObstacleKind.THICK_WALL for item in first_obstacles), 12)
-        self.assertEqual(sum(item.kind == ObstacleKind.THIN_WALL for item in first_obstacles), 6)
+        self.assertEqual(len(first_obstacles), 58)
+        self.assertEqual(len(first_bushes), 92)
+        self.assertEqual(sum(item.kind == ObstacleKind.THICK_WALL for item in first_obstacles), 36)
+        self.assertEqual(sum(item.kind == ObstacleKind.THIN_WALL for item in first_obstacles), 22)
 
     def test_snapshot_keeps_obstacle_identity_kind_and_bounds(self) -> None:
         obstacles, _ = build_terrain()
 
         snapshot = snapshot_obstacles(obstacles)
 
-        self.assertEqual(len(snapshot), 18)
+        self.assertEqual(len(snapshot), 58)
         self.assertEqual(snapshot[0][0], obstacles[0].obstacle_id)
         self.assertEqual(snapshot[0][1], obstacles[0].kind)
         self.assertEqual(snapshot[0][2], obstacles[0].bounds)
@@ -149,8 +291,8 @@ class TerrainGeometryTests(unittest.TestCase):
         first = create_match()
         second = create_match()
 
-        self.assertEqual(len(first.obstacles), 18)
-        self.assertEqual(len(first.bushes), 27)
+        self.assertEqual(len(first.obstacles), 58)
+        self.assertEqual(len(first.bushes), 92)
         self.assertEqual(
             [(item.kind, item.bounds) for item in first.obstacles],
             [(item.kind, item.bounds) for item in second.obstacles],

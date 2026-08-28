@@ -12,20 +12,29 @@ import pygame
 
 from pvpve_escape import config, rendering
 from pvpve_escape.auto_aim import resolve_auto_aim
+from pvpve_escape.characters import create_ultimate_action
 from pvpve_escape.controllers import HumanController, InputState
 from pvpve_escape.models import (
     AppScreen,
+    BushState,
     CharacterId,
     MonsterType,
     MonsterBehavior,
     ObstacleKind,
     ObstacleState,
+    TacticalId,
     Vector2,
     WorldRect,
 )
 from pvpve_escape.monsters import get_monster_definition
 from pvpve_escape.terrain import circle_intersects_rect
-from pvpve_escape.world import _choose_wander_target, create_match, update_monsters, update_world
+from pvpve_escape.world import (
+    _apply_action,
+    _choose_wander_target,
+    create_match,
+    update_monsters,
+    update_world,
+)
 
 
 class AutoAimHistoryTests(unittest.TestCase):
@@ -279,6 +288,140 @@ class MonsterNavigationIntegrationTests(unittest.TestCase):
                     interaction_distance + config.TERRAIN_GEOMETRY_EPSILON,
                 )
 
+    def test_shooter_does_not_stall_when_preferred_position_is_inside_a_wall_corner(self) -> None:
+        match = create_match()
+        target = match.players[0]
+        for player in match.players[1:]:
+            player.alive = False
+
+        shooter = next(monster for monster in match.monsters if monster.monster_type == MonsterType.SHOOTER)
+        shooter.position = Vector2(820, 540)
+        shooter.spawn_position = shooter.position.copy()
+        shooter.attack_timer = 999.0
+        match.monsters = [shooter]
+        target.position = Vector2(1200, 600)
+
+        # 先在無牆視線下取得目標，再建立牆體，重現已鎖定目標繞牆的情境。
+        match.obstacles = []
+        update_monsters(match, 0.05)
+        self.assertEqual(shooter.target_player_id, target.player_id)
+        match.obstacles = [
+            ObstacleState(
+                obstacle_id=1,
+                kind=ObstacleKind.THICK_WALL,
+                bounds=WorldRect(900, 500, 100, 160),
+            )
+        ]
+
+        positions = [shooter.position.copy()]
+        for _ in range(200):
+            update_monsters(match, 0.05)
+            positions.append(shooter.position.copy())
+            self.assertFalse(
+                circle_intersects_rect(shooter.position, shooter.radius, match.obstacles[0].bounds)
+            )
+
+        self.assertGreater(
+            max(previous.distance_to(current) for previous, current in zip(positions, positions[1:])),
+            config.TERRAIN_GEOMETRY_EPSILON,
+        )
+        self.assertLessEqual(
+            shooter.position.distance_to(target.position),
+            get_monster_definition(MonsterType.SHOOTER).preferred_range
+            + 36.0
+            + config.TERRAIN_GEOMETRY_EPSILON,
+        )
+
+    def test_shooter_can_leave_the_navigation_clearance_at_a_long_wall_corner(self) -> None:
+        match = create_match()
+        target = match.players[0]
+        for player in match.players[1:]:
+            player.alive = False
+
+        shooter = next(monster for monster in match.monsters if monster.monster_type == MonsterType.SHOOTER)
+        shooter.position = Vector2(100, 600)
+        shooter.spawn_position = shooter.position.copy()
+        shooter.attack_timer = 999.0
+        match.monsters = [shooter]
+        target.position = Vector2(600, 600)
+
+        match.obstacles = []
+        update_monsters(match, 0.05)
+        self.assertEqual(shooter.target_player_id, target.player_id)
+        match.obstacles = [
+            ObstacleState(
+                obstacle_id=1,
+                kind=ObstacleKind.THIN_WALL,
+                bounds=WorldRect(300, 400, 100, 600),
+            )
+        ]
+
+        positions = [shooter.position.copy()]
+        for _ in range(200):
+            update_monsters(match, 0.05)
+            positions.append(shooter.position.copy())
+            self.assertFalse(
+                circle_intersects_rect(shooter.position, shooter.radius, match.obstacles[0].bounds)
+            )
+
+        self.assertGreater(
+            max(previous.distance_to(current) for previous, current in zip(positions, positions[1:])),
+            config.TERRAIN_GEOMETRY_EPSILON,
+        )
+        self.assertLessEqual(
+            shooter.position.distance_to(target.position),
+            get_monster_definition(MonsterType.SHOOTER).preferred_range
+            + 36.0
+            + config.TERRAIN_GEOMETRY_EPSILON,
+        )
+
+    def test_shooter_falls_back_to_reachable_target_when_preferred_area_is_sealed(self) -> None:
+        match = create_match()
+        target = match.players[0]
+        for player in match.players[1:]:
+            player.alive = False
+
+        shooter = next(monster for monster in match.monsters if monster.monster_type == MonsterType.SHOOTER)
+        shooter.position = Vector2(460, 470)
+        shooter.spawn_position = shooter.position.copy()
+        shooter.attack_timer = 999.0
+        match.monsters = [shooter]
+        target.position = Vector2(950, 470)
+
+        # 先取得目標，再用四面厚牆封住安全的偏好距離點，重現「目標可繞行、
+        # 但 300px 偏好點本身不可達」的情境。
+        match.obstacles = []
+        update_monsters(match, 0.05)
+        self.assertEqual(shooter.target_player_id, target.player_id)
+        match.obstacles = [
+            ObstacleState(1, ObstacleKind.THICK_WALL, WorldRect(500, 320, 100, 300)),
+            ObstacleState(2, ObstacleKind.THICK_WALL, WorldRect(700, 320, 100, 300)),
+            ObstacleState(3, ObstacleKind.THICK_WALL, WorldRect(500, 320, 300, 100)),
+            ObstacleState(4, ObstacleKind.THICK_WALL, WorldRect(500, 520, 300, 100)),
+        ]
+
+        positions = [shooter.position.copy()]
+        for _ in range(200):
+            update_monsters(match, 0.05)
+            positions.append(shooter.position.copy())
+            self.assertTrue(
+                all(
+                    not circle_intersects_rect(shooter.position, shooter.radius, obstacle.bounds)
+                    for obstacle in match.obstacles
+                )
+            )
+
+        self.assertGreater(
+            max(previous.distance_to(current) for previous, current in zip(positions, positions[1:])),
+            config.TERRAIN_GEOMETRY_EPSILON,
+        )
+        self.assertLessEqual(
+            shooter.position.distance_to(target.position),
+            get_monster_definition(MonsterType.SHOOTER).preferred_range
+            + 36.0
+            + config.TERRAIN_GEOMETRY_EPSILON,
+        )
+
 
 class MonsterWanderIntegrationTests(unittest.TestCase):
     @staticmethod
@@ -486,6 +629,38 @@ class MonsterCombatRegressionTests(unittest.TestCase):
         update_monsters(match, 0.05)
         self.assertEqual(target.health, health_before)
         self.assertFalse(match.monster_projectiles)
+
+
+class TerrainSkillIntegrationTests(unittest.TestCase):
+    def test_breacher_ultimate_breaks_only_intersecting_formal_cells(self) -> None:
+        match = create_match(CharacterId.BREACHER, TacticalId.DASH)
+        match.monsters = []
+        owner = match.players[0]
+        owner.position = Vector2(500, 500)
+        owner.ultimate_energy = 100.0
+        match.obstacles = [
+            ObstacleState(1, ObstacleKind.THIN_WALL, WorldRect(500, 400, 100, 100)),
+            ObstacleState(2, ObstacleKind.THIN_WALL, WorldRect(600, 400, 100, 100)),
+            ObstacleState(3, ObstacleKind.THIN_WALL, WorldRect(800, 400, 100, 100)),
+            ObstacleState(4, ObstacleKind.THICK_WALL, WorldRect(500, 600, 100, 100)),
+        ]
+        match.bushes = [
+            BushState(1, WorldRect(500, 300, 100, 100)),
+            BushState(2, WorldRect(600, 300, 100, 100)),
+            BushState(3, WorldRect(800, 300, 100, 100)),
+        ]
+
+        action = create_ultimate_action(owner, Vector2(1, 0))
+        self.assertIsNotNone(action)
+        _apply_action(match, action)
+
+        self.assertTrue(match.obstacles[0].destroyed)
+        self.assertTrue(match.obstacles[1].destroyed)
+        self.assertFalse(match.obstacles[2].destroyed)
+        self.assertFalse(match.obstacles[3].destroyed)
+        self.assertFalse(match.bushes[0].active)
+        self.assertFalse(match.bushes[1].active)
+        self.assertTrue(match.bushes[2].active)
 
 
 class IntroScreenTests(unittest.TestCase):

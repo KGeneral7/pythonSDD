@@ -8,7 +8,7 @@ import math
 
 from . import config
 from .models import ObstacleKind, ObstacleState, Vector2, WorldRect
-from .terrain import inflate_rect
+from .terrain import first_obstacle_on_segment, inflate_rect
 
 
 GridCoordinate = tuple[int, int]
@@ -190,7 +190,7 @@ def _segment_is_safe(
             )
             for obstacle in obstacles
         )
-    for left, top, right, bottom in expanded_obstacles:
+    for obstacle, (left, top, right, bottom) in zip(obstacles, expanded_obstacles):
         if (
             right < segment_left - strict_epsilon
             or left > segment_right + strict_epsilon
@@ -213,12 +213,30 @@ def _segment_is_safe(
         if fraction > config.TERRAIN_GEOMETRY_EPSILON:
             result = False
             break
-        if (
+        start_inside_expanded = (
             left + strict_epsilon < start.x < right - strict_epsilon
             and top + strict_epsilon < start.y < bottom - strict_epsilon
-        ):
-            result = False
-            break
+        )
+        if start_inside_expanded:
+            end_inside_expanded = (
+                left + strict_epsilon < end.x < right - strict_epsilon
+                and top + strict_epsilon < end.y < bottom - strict_epsilon
+            )
+            if end_inside_expanded:
+                result = False
+                break
+            # 實際怪物碰撞只使用 radius；怪物可能因上一幀的實際碰撞
+            # 合法地落在額外 clearance 內。此時允許它離開規劃安全區，
+            # 但仍用既有精確半徑掃掠確認離開線段沒有真的穿過牆體。
+            if first_obstacle_on_segment(
+                start,
+                end,
+                (obstacle,),
+                radius=max(0.0, float(radius)),
+            ).blocked:
+                result = False
+                break
+            continue
         if delta_length <= config.TERRAIN_GEOMETRY_EPSILON:
             continue
         sample = start + delta * min(1.0, strict_epsilon * 2 / delta_length)

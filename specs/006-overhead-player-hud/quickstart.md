@@ -1,6 +1,6 @@
 # 快速驗證：玩家頭頂 HUD 與個人戰鬥資訊
 
-## 實作後驗證紀錄（2026-08-27）
+## v0.3.1 實作後驗證紀錄（2026-08-27）
 
 - `.\.venv\Scripts\python.exe -m unittest discover -s pvpve_escape\tests -p "test_*.py" -q`：177 項測試全數通過；包含頭頂 HUD、其他玩家 viewport 離屏/回屏、選角與死亡倒數聚焦測試，另含配件死亡冷卻生命週期回歸測試。
 - `.\.venv\Scripts\python.exe -m compileall -q pvpve_escape` 與 `git diff --check`：通過。

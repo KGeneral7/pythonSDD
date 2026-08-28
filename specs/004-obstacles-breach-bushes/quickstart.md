@@ -6,6 +6,8 @@
 **資料模型**：[data-model.md](data-model.md)
 **研究決策**：[research.md](research.md)
 
+> **版本範圍**：本快速驗證記錄 v0.2.0 的矩形地形實作與驗收。文中 18／27／45 個物件、162/162 測試及 172.23 FPS 均為歷史數據；目前工作樹的 100×100px 單格地圖與最新驗證結果以 `specs/007-map-asset-integration/` 為準。
+
 ## 前置條件
 
 - Windows 工作區位於 C:\Users\Yun-Tse Kao\Desktop\pythonSDD。
@@ -57,9 +59,9 @@
 ## 實作驗證結果
 
 - `test_terrain.py`：25/25；`test_aiming.py`：10/10；`test_rendering.py`：23/23；`test_visibility.py`：3/3；`test_regeneration.py`：12/12。
-- 完整 `unittest discover`：162/162 通過；`compileall -q pvpve_escape` 與 `git diff --check` 通過。
+- v0.2.0 完整 `unittest discover`：162/162 通過；`compileall -q pvpve_escape` 與 `git diff --check` 通過。
 - 入口煙霧驗收：在 `SDL_VIDEODRIVER=dummy` 下執行 `pvpve_escape.main.run()`，注入單次 QUIT，可正常建立與關閉正式入口。
-- 效能驗收：1280×720、6 名玩家、12 隻怪物與 45 個固定地形物件，先預熱 60 幀後量測 600 幀，3.4837 秒完成，平均 172.23 FPS（門檻 55 FPS）。
+- v0.2.0 效能驗收：1280×720、6 名玩家、12 隻怪物與 45 個固定地形物件，先預熱 60 幀後量測 600 幀，3.4837 秒完成，平均 172.23 FPS（門檻 55 FPS）。
 - 核心規則已接入正式 `update_world`：玩家/怪物牆碰撞、直線與飛行效果截斷、Breacher 終極技能/DASH 破壞、破陣者主要技能阻擋、草叢觀看者隱藏與 5 秒後 10%/秒恢復均由單局狀態驅動。
 
 ## 啟動遊戲
@@ -123,12 +125,12 @@
 1. 破壞至少一面薄牆與一片草叢，按 R 重新開始。
 2. 確認新場的所有牆與草叢恢復初始位置、類型與有效狀態。
 3. 再確認原有角色選擇、技能、怪物、彈藥、死亡、撤離與勝負流程仍可操作。
-4. 目前完整測試為 162/162 通過；若後續其他工作樹出現 GUI 或既有功能基線差異，將其獨立記錄，不覆蓋未提交的使用者變更。
+4. v0.2.0 驗證時完整測試為 162/162 通過；若後續其他工作樹出現 GUI 或既有功能基線差異，將其獨立記錄，不覆蓋未提交的使用者變更。
 
 ### 7. 效能與分支生命週期
 
 1. 依 `specs/004-obstacles-breach-bushes/tasks.md` 的 T002 確認未提交工作已保留；本次交付使用符合 004 識別字的 `codex/004-obstacles-breach-bushes`，`day3/` 不納入提交。
-2. 地圖更新後效能量測已完成：預熱 60 幀後量測 600 幀／3.4837 秒／172.23 FPS，場景為 1280×720、6 名玩家、12 隻怪物與 45 個固定地形物件，高於 55 FPS 門檻。
+2. v0.2.0 地圖更新後效能量測已完成：預熱 60 幀後量測 600 幀／3.4837 秒／172.23 FPS，場景為 1280×720、6 名玩家、12 隻怪物與 45 個固定地形物件，高於 55 FPS 門檻。
 3. 原始功能的 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 與 [v0.1.0 發布](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.1.0) 已作為基線；本次已建立非 draft [PR #4](https://github.com/KGeneral7/pythonSDD/pull/4)，以合併提交 `2f3383f` 合併至 `main`，並發布 [v0.2.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0)。專案未配置 GitHub Actions，故以本機驗證與 GitHub 可合併狀態作為檢查結果。
 
 ## 實作驗證狀態
@@ -138,4 +140,4 @@
 - 已完成：依使用者確認的 JSON 更新 `config.py` 與 [map-layout-draft.json](map-layout-draft.json)；全部紅框物件保留。
 - 已完成：`rendering.draw_terrain` 接入正式 `draw_match` → `draw_world` 地圖層，無頭 Pygame 確認完整世界的 45 個牆/草叢矩形，以及不同相機位置的正式 1280×720 畫面都可繪出對應物件。
 - 已完成：牆體碰撞、直線/飛行阻擋、Breacher 終極技能/DASH 破壞、破陣者主要技能阻擋、草叢觀看者隱藏、戰鬥恢復、入口煙霧與效能驗證。
-- 已完成：T036 所涵蓋的遠端分支推送、[PR #4](https://github.com/KGeneral7/pythonSDD/pull/4)、版本發布、合併與文件回填；`2f3383f` 已進入 `main`，`v0.2.0` 已發布；後續文件同步 PR 亦已合併。本次相關且已合併的遠端開發分支均已刪除；T036 的本地分支清理則因 squash 後提交不是 `main` ancestry，遭一般 `git branch -d` 安全檢查拒絕，未使用 `-D`，故保留。原始 PR #3／`v0.1.0` 僅作既有功能基線記錄。
+- 已完成：T036 所涵蓋的遠端分支推送、[PR #4](https://github.com/KGeneral7/pythonSDD/pull/4)、版本發布、合併、文件回填與相關遠端／本地分支清理；`2f3383f` 已進入 `main`，`v0.2.0` 已發布；後續文件同步 PR 亦已合併。原始 PR #3／`v0.1.0` 僅作既有功能基線記錄。

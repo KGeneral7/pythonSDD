@@ -124,7 +124,7 @@ description: "PvPvE 中央撤離競技遊戲的可執行任務清單"
 - [X] T042 [P] 在 `pvpve_escape/config.py`、`pvpve_escape/models.py`、`pvpve_escape/rules.py` 補充關鍵公式、座標、更新順序與不直觀碰撞判定的繁體中文註解。
 - [X] T043 [P] 更新 `specs/001-pvpve-escape-game/quickstart.md` 的實際命令、按鍵、角色效果與驗證紀錄，使其與完成的 `pvpve_escape/` 程式一致。
 - [X] T044 執行完整測試命令 `\.venv\Scripts\python.exe -m unittest discover -s pvpve_escape\tests -p "test_*.py" -v`，並修正所有失敗測試涉及的最小範圍檔案。
-- [X] T045 執行 `specs/001-pvpve-escape-game/quickstart.md` 的全部手動情境，確認 1280×720 視窗下遊戲可操作、地圖邊界正確、一般情況接近 60 FPS。
+- [X] T045 執行 `specs/001-pvpve-escape-game/quickstart.md` 的全部手動情境，確認 1280×720 視窗下遊戲可操作、地圖邊界正確、一般情況接近 60 FPS（本功能當時的品質基準；目前主迴圈上限為 120 FPS）。
 - [X] T046 以既有方式啟動 `day1/prj001.py` 與 `day2/prj009.py`，確認新增 `pvpve_escape/` 與 SDD 文件沒有破壞既有練習。
 - [X] T047 檢查 `pvpve_escape/` 中所有新程式命名、常數集中、輸入／更新／繪製分離與註解品質，並在 `specs/001-pvpve-escape-game/quickstart.md` 記錄尚未涵蓋的情況。
 
