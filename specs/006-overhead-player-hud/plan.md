@@ -5,7 +5,7 @@
 **本次修正分支**：`codex/fix-offscreen-player-hud`（由 `main` 的 `v0.3.0` 建立之小型維護修正）
 **日期**：2026-08-27
 **基準發布版本**：`v0.3.0`
-**本次預定發布版本**：`v0.3.1`
+**本次發布版本**：`v0.3.1`
 **規格**：[spec.md](spec.md)
 
 ## 摘要
@@ -136,8 +136,12 @@ pvpve_escape/
 | 輸入/更新/渲染分離 | 通過 | UI 排版與可見性集中在 `rendering.py`；配件冷卻的死亡生命週期只在 `rules.py` 的既有計時／死亡函式中明確處理，輸入介面不變。 |
 | 可驗證行為 | 通過 | 自動測試與手動測試矩陣覆蓋規格 SC-001～SC-008。 |
 | 文件語言 | 通過 | 所有本功能 SDD 產物使用繁體中文。 |
-| 分支/生命週期治理 | 通過 | 原始功能分支使用 `006-overhead-player-hud` 識別字；本次為小型維護修正，使用 `codex/fix-offscreen-player-hud`，後續依憲章完成驗證、PR 與合併後清理。 |
+| 分支/生命週期治理 | 通過 | 原始功能分支使用 `006-overhead-player-hud` 識別字；本次小型維護修正使用 `codex/fix-offscreen-player-hud`，已完成驗證並由 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10) 合併，後續依憲章清理分支。 |
 
 ## 複雜度與治理追蹤
 
 本功能沒有憲章例外，也不需要額外服務層、repository pattern、資料庫或第三方套件；新增抽象若無法直接支持上述驗收項目，應拒絕加入。
+
+## 發布收尾（2026-08-28）
+
+本次 viewport 修正已完成發布前驗證與人工驗收，並以 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10) squash merge 至 `main`；合併 commit 為 `e9aa3b466ef197bba312d30c11b23dd7703b31fc`，發布版本為 [v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1)。

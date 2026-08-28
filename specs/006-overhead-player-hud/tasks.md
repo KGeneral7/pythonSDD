@@ -128,6 +128,7 @@ description: "玩家頭頂 HUD 與個人戰鬥資訊的實作任務"
 - [X] T024 [US2] 在 `pvpve_escape/tests/test_rendering.py` 加入 viewport 邊界回歸測試，重複驗證其他玩家從左、右、上、下離開時不再呼叫頭頂 overlay，且回到視野內後恢復；同時確認本機玩家仍被繪製。
 - [X] T025 [US2] 在 `pvpve_escape/rendering.py` 的 `draw_world()` 於世界座標投影後加入其他玩家頭頂 overlay 的螢幕錨點剔除，跳過 viewport 外玩家的公開資訊但保留既有角色圖形裁切，不改變地形可見性或本機玩家例外。
 - [X] T026 在 `specs/006-overhead-player-hud/` 同步 viewport 可見性需求、資料模型、UI 契約、測試計畫與快速驗證步驟，並確認文件中的 FR/SC/任務對應一致。
+- [X] T027 在完成文件、測試與人工驗收後，提交 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10)、squash merge 至 `main`，並以合併 commit `e9aa3b466ef197bba312d30c11b23dd7703b31fc` 發布 [v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1)。
 
 **檢查點**：其他玩家離開 viewport 時不再留下血量條或其他頭頂資訊，回到視野內恢復；聚焦渲染測試、完整回歸、編譯、headless 啟動、差異檢查、SDD 分析與新增情境人工確認均已完成。
 
@@ -145,6 +146,7 @@ description: "玩家頭頂 HUD 與個人戰鬥資訊的實作任務"
 - **收尾（階段 6）**：依賴所有要交付的使用者故事；T016 可與回歸準備平行，T017/T018 必須在程式與測試穩定後執行。
 - **審查補充**：依賴階段 6；T019、T021 必須先於各自的實作修正 T020、T022，T023 在程式、測試與驗證結果穩定後完成。
 - **審查補充二**：依賴 US2 的既有 overlay 入口與審查補充；T024 先建立視野邊界回歸測試，再由 T025 實作剔除，T026 在程式與測試完成後同步文件。
+- **發布收尾**：依賴 T026 與所有驗證結果；T027 完成 PR、合併與 v0.3.1 發布紀錄。
 
 ### 使用者故事完成順序
 
