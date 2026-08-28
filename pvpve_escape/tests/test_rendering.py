@@ -11,7 +11,7 @@ import pygame
 from pvpve_escape import config, rendering
 from pvpve_escape.characters import create_primary_action, create_tactical_action, create_ultimate_action
 from pvpve_escape.controllers import HumanController, InputState
-from pvpve_escape.models import CharacterId, MatchPhase, TacticalId, Vector2
+from pvpve_escape.models import CharacterId, MatchPhase, ObstacleKind, ObstacleState, TacticalId, Vector2, WorldRect
 from pvpve_escape.world import _apply_action, create_match, update_match
 
 
@@ -278,25 +278,51 @@ class TraditionalChineseFontTests(unittest.TestCase):
 
         rendering.draw_terrain(surface, match)
 
-        for kind, left, top, width, height in config.OBSTACLE_LAYOUT:
-            point = (left + width // 2, top + height // 2)
-            expected_color = (
-                config.THICK_WALL_COLOR
-                if kind == "thick_wall"
-                else config.THIN_WALL_COLOR
-            )
+        for obstacle in match.obstacles:
+            asset = rendering.load_map_asset(obstacle.kind.value)
+            self.assertIsNotNone(asset)
+            point = (round(obstacle.bounds.left + 50), round(obstacle.bounds.top + 50))
             self.assertEqual(
                 surface.get_at(point)[:3],
-                expected_color,
-                f"{kind} at {point} should be visible with its configured fill color",
+                asset.get_at((50, 50))[:3],
+                f"{obstacle.kind.value} at {point} should use its tile pixels",
             )
 
-        for left, top, width, height in config.BUSH_LAYOUT:
-            point = (left + width // 2, top + height // 2)
+        bush_asset = rendering.load_map_asset("bush")
+        self.assertIsNotNone(bush_asset)
+        for bush in match.bushes:
+            point = (round(bush.bounds.left + 50), round(bush.bounds.top + 50))
             self.assertEqual(
                 surface.get_at(point)[:3],
-                config.BUSH_COLOR,
-                f"bush at {point} should be visible with its configured fill color",
+                bush_asset.get_at((50, 50))[:3],
+                f"bush at {point} should use its tile pixels",
+            )
+
+    def test_formal_terrain_and_ground_use_100px_tile_pixels(self) -> None:
+        match = create_match()
+        match.players = []
+        match.monsters = []
+        match.camera.position = Vector2()
+        surface = pygame.Surface((config.WORLD_WIDTH, config.WORLD_HEIGHT))
+
+        rendering.draw_world(surface, match)
+        ground_asset = rendering.load_map_asset("ground")
+        self.assertIsNotNone(ground_asset)
+        self.assertEqual(surface.get_at((50, 50))[:3], ground_asset.get_at((50, 50))[:3])
+
+        surface.fill(config.GROUND_COLOR)
+        rendering.draw_terrain(surface, match)
+        for obstacle in match.obstacles:
+            asset = rendering.load_map_asset(obstacle.kind.value)
+            self.assertEqual(
+                surface.get_at((round(obstacle.bounds.left + 50), round(obstacle.bounds.top + 50)))[:3],
+                asset.get_at((50, 50))[:3],
+            )
+        for bush in match.bushes:
+            asset = rendering.load_map_asset("bush")
+            self.assertEqual(
+                surface.get_at((round(bush.bounds.left + 50), round(bush.bounds.top + 50)))[:3],
+                asset.get_at((50, 50))[:3],
             )
 
     def test_confirmed_terrain_is_visible_in_the_actual_game_viewport_after_camera_moves(self) -> None:
@@ -309,17 +335,27 @@ class TraditionalChineseFontTests(unittest.TestCase):
         surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
 
         for _ in range(20):
-            # 開場左上視角：這兩個點位於第一個視窗內，且不在 HUD 區域。
+            # 開場左上視角：正式格的圖片應以世界左上角投影。
             match.camera.position = Vector2(0, 0)
             rendering.draw_match(surface, match)
-            self.assertEqual(surface.get_at((1030, 450))[:3], config.THICK_WALL_COLOR)
-            self.assertEqual(surface.get_at((850, 350))[:3], config.BUSH_COLOR)
+            thick = next(item for item in match.obstacles if item.kind.value == "thick_wall" and item.bounds.left < config.WINDOW_WIDTH and item.bounds.top < config.WINDOW_HEIGHT)
+            bush = next(item for item in match.bushes if item.bounds.left < config.WINDOW_WIDTH and item.bounds.top < config.WINDOW_HEIGHT)
+            thick_asset = rendering.load_map_asset("thick_wall")
+            bush_asset = rendering.load_map_asset("bush")
+            self.assertEqual(surface.get_at((round(thick.bounds.left + 50), round(thick.bounds.top + 50)))[:3], thick_asset.get_at((50, 50))[:3])
+            self.assertEqual(surface.get_at((round(bush.bounds.left + 50), round(bush.bounds.top + 50)))[:3], bush_asset.get_at((50, 50))[:3])
 
             # 移到地圖右下區域：確認世界座標不是只在開場畫面硬編碼繪製。
             match.camera.position = Vector2(1200, 700)
             rendering.draw_match(surface, match)
-            self.assertEqual(surface.get_at((850, 100))[:3], config.THIN_WALL_COLOR)
-            self.assertEqual(surface.get_at((1050, 200))[:3], config.BUSH_COLOR)
+            thin = next(item for item in match.obstacles if item.kind.value == "thin_wall" and 1200 <= item.bounds.left < 2400 and 700 <= item.bounds.top < 1400)
+            bush = next(item for item in match.bushes if 1200 <= item.bounds.left < 2400 and 700 <= item.bounds.top < 1400)
+            thin_asset = rendering.load_map_asset("thin_wall")
+            bush_asset = rendering.load_map_asset("bush")
+            thin_point = (round(thin.bounds.left - match.camera.position.x + 50), round(thin.bounds.top - match.camera.position.y + 50))
+            bush_point = (round(bush.bounds.left - match.camera.position.x + 50), round(bush.bounds.top - match.camera.position.y + 50))
+            self.assertEqual(surface.get_at(thin_point)[:3], thin_asset.get_at((50, 50))[:3])
+            self.assertEqual(surface.get_at(bush_point)[:3], bush_asset.get_at((50, 50))[:3])
 
     def test_destroyed_terrain_is_removed_from_the_next_map_draw(self) -> None:
         match = create_match()
@@ -332,12 +368,69 @@ class TraditionalChineseFontTests(unittest.TestCase):
         bush_center = (round(bush.bounds.center.x), round(bush.bounds.center.y))
         wall.destroyed = True
         bush.active = False
-        surface.fill(config.GROUND_COLOR)
 
-        rendering.draw_terrain(surface, match)
+        match.players = []
+        match.monsters = []
+        rendering.draw_world(surface, match)
 
-        self.assertEqual(surface.get_at(wall_center)[:3], config.GROUND_COLOR)
-        self.assertEqual(surface.get_at(bush_center)[:3], config.GROUND_COLOR)
+        ground_asset = rendering.load_map_asset("ground")
+        self.assertEqual(surface.get_at(wall_center)[:3], ground_asset.get_at((50, 50))[:3])
+        self.assertEqual(surface.get_at(bush_center)[:3], ground_asset.get_at((50, 50))[:3])
+
+    def test_destroying_one_cell_leaves_neighbor_and_thick_wall_tiles_visible(self) -> None:
+        match = create_match()
+        match.players = []
+        match.monsters = []
+        match.camera.position = Vector2()
+        thin = ObstacleState(1, ObstacleKind.THIN_WALL, WorldRect(100, 0, 100, 100))
+        neighbor = ObstacleState(2, ObstacleKind.THIN_WALL, WorldRect(200, 0, 100, 100))
+        thick = ObstacleState(3, ObstacleKind.THICK_WALL, WorldRect(300, 0, 100, 100))
+        match.obstacles = [thin, neighbor, thick]
+        surface = pygame.Surface((config.WORLD_WIDTH, config.WORLD_HEIGHT))
+        thin.destroyed = True
+
+        rendering.draw_world(surface, match)
+
+        ground_asset = rendering.load_map_asset("ground")
+        thin_asset = rendering.load_map_asset("thin_wall")
+        thick_asset = rendering.load_map_asset("thick_wall")
+        self.assertEqual(surface.get_at((150, 50))[:3], ground_asset.get_at((50, 50))[:3])
+        self.assertEqual(surface.get_at((250, 50))[:3], thin_asset.get_at((50, 50))[:3])
+        self.assertEqual(surface.get_at((350, 50))[:3], thick_asset.get_at((50, 50))[:3])
+
+    def test_camera_positions_keep_tile_pixels_aligned_and_clip_partial_tiles_naturally(self) -> None:
+        camera_cases = (
+            (Vector2(0, 0), Vector2(100, 100), (150, 150)),
+            (Vector2(560, 340), Vector2(600, 400), (90, 110)),
+            (Vector2(1120, 680), Vector2(1200, 700), (130, 70)),
+        )
+
+        for camera, world_tile, expected_center in camera_cases:
+            match = create_match()
+            match.players = []
+            match.monsters = []
+            match.obstacles = [ObstacleState(1, ObstacleKind.THICK_WALL, WorldRect(world_tile.x, world_tile.y, 100, 100))]
+            match.bushes = []
+            match.camera.position = camera
+            surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+
+            rendering.draw_world(surface, match)
+
+            wall_asset = rendering.load_map_asset("thick_wall")
+            self.assertEqual(surface.get_at(expected_center)[:3], wall_asset.get_at((50, 50))[:3])
+
+        match = create_match()
+        match.players = []
+        match.monsters = []
+        match.obstacles = [ObstacleState(1, ObstacleKind.THICK_WALL, WorldRect(0, 0, 100, 100))]
+        match.bushes = []
+        match.camera.position = Vector2(50, 50)
+        surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+
+        rendering.draw_world(surface, match)
+
+        wall_asset = rendering.load_map_asset("thick_wall")
+        self.assertEqual(surface.get_at((49, 49))[:3], wall_asset.get_at((99, 99))[:3])
 
     def test_every_role_primary_and_ultimate_creates_a_visual_effect(self) -> None:
         expected_primary = {

@@ -6,9 +6,9 @@ import math
 import unittest
 
 from pvpve_escape import config
-from pvpve_escape.characters import create_primary_action
+from pvpve_escape.characters import create_primary_action, create_tactical_action
 from pvpve_escape.controllers import InputState
-from pvpve_escape.models import CharacterId, Vector2
+from pvpve_escape.models import CharacterId, ObstacleKind, ObstacleState, TacticalId, Vector2, WorldRect
 from pvpve_escape.world import _apply_action, create_match, update_world
 
 
@@ -39,6 +39,23 @@ def _finish_pellets(match, steps: int = 8, delta_time: float = 0.05):
 
 
 class BreachPelletRuleTests(unittest.TestCase):
+    def test_dash_integration_breaks_one_adjacent_wall_cell_and_keeps_the_next(self) -> None:
+        match = create_match(CharacterId.CONTROLLER, TacticalId.DASH)
+        match.monsters = []
+        owner = match.players[0]
+        owner.position = Vector2(500, 450)
+        match.obstacles = [
+            ObstacleState(1, ObstacleKind.THIN_WALL, WorldRect(600, 400, 100, 100)),
+            ObstacleState(2, ObstacleKind.THIN_WALL, WorldRect(800, 400, 100, 100)),
+        ]
+
+        action = create_tactical_action(owner, Vector2(1, 0), Vector2(1, 0))
+        self.assertIsNotNone(action)
+        _apply_action(match, action)
+
+        self.assertTrue(match.obstacles[0].destroyed)
+        self.assertFalse(match.obstacles[1].destroyed)
+
     def test_center_edges_and_partially_intersecting_pellet_paths_are_hit(self) -> None:
         for angle in (0.0, -config.BREACH_CONE_ANGLE_DEGREES / 2.0, config.BREACH_CONE_ANGLE_DEGREES / 2.0):
             match, _, target = _prepare_target(angle, 120.0)

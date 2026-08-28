@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import math
 
 from . import config
 from .models import (
@@ -17,37 +18,115 @@ from .models import (
 
 
 TerrainObstacle = ObstacleState | tuple[int, ObstacleKind | str, WorldRect]
+TerrainLayoutEntry = tuple[str | ObstacleKind, float, float, float, float]
+NormalizedTerrainCell = tuple[str, int, int]
+
+_TERRAIN_PRIORITY = {
+    "bush": 1,
+    ObstacleKind.THIN_WALL.value: 2,
+    ObstacleKind.THICK_WALL.value: 3,
+}
+
+
+def _layout_kind_value(kind: str | ObstacleKind) -> str:
+    return kind.value if isinstance(kind, ObstacleKind) else str(kind)
+
+
+def _cell_coordinates(start: float, end: float, limit: int) -> range:
+    """將一段布局邊界轉成世界內的完整地形格座標。"""
+
+    if not math.isfinite(start) or not math.isfinite(end) or end <= start:
+        return range(0, 0)
+    cell_size = config.TERRAIN_CELL_SIZE
+    first = math.floor(start / cell_size) * cell_size
+    last = math.ceil(end / cell_size) * cell_size
+    first = max(0, min(limit, first))
+    last = max(0, min(limit, last))
+    if last <= first:
+        return range(0, 0)
+    return range(first, last, cell_size)
+
+
+def normalize_layout(layout: Iterable[TerrainLayoutEntry]) -> list[NormalizedTerrainCell]:
+    """正規化布局、展開單格並按厚牆／薄牆／草叢優先級去除重疊。"""
+
+    occupied: dict[tuple[int, int], tuple[int, str]] = {}
+    for kind, left, top, width, height in layout:
+        kind_value = _layout_kind_value(kind)
+        if kind_value not in _TERRAIN_PRIORITY:
+            raise ValueError(f"未知地形類型：{kind_value}")
+        try:
+            raw_left = float(left)
+            raw_top = float(top)
+            raw_right = raw_left + float(width)
+            raw_bottom = raw_top + float(height)
+        except (TypeError, ValueError):
+            continue
+        for cell_top in _cell_coordinates(raw_top, raw_bottom, config.WORLD_HEIGHT):
+            for cell_left in _cell_coordinates(raw_left, raw_right, config.WORLD_WIDTH):
+                key = (cell_left, cell_top)
+                priority = _TERRAIN_PRIORITY[kind_value]
+                current = occupied.get(key)
+                if current is None or priority > current[0]:
+                    occupied[key] = (priority, kind_value)
+
+    return [
+        (kind, left, top)
+        for (left, top), (_, kind) in occupied.items()
+    ]
+
+
+def _normalized_layout() -> list[NormalizedTerrainCell]:
+    """合併牆與草叢原始矩形，提供所有正式建立入口共用的結果。"""
+
+    layout: list[TerrainLayoutEntry] = [
+        (kind, left, top, width, height)
+        for kind, left, top, width, height in config.OBSTACLE_LAYOUT
+    ]
+    layout.extend(
+        ("bush", left, top, width, height)
+        for left, top, width, height in config.BUSH_LAYOUT
+    )
+    return normalize_layout(layout)
+
+
+def _build_terrain_states() -> tuple[list[ObstacleState], list[BushState]]:
+    normalized = _normalized_layout()
+    obstacles: list[ObstacleState] = []
+    bushes: list[BushState] = []
+    for kind, left, top in normalized:
+        bounds = WorldRect(left, top, config.TERRAIN_CELL_SIZE, config.TERRAIN_CELL_SIZE)
+        if kind == "bush":
+            bushes.append(BushState(bush_id=len(bushes), bounds=bounds))
+        else:
+            obstacles.append(
+                ObstacleState(
+                    obstacle_id=len(obstacles),
+                    kind=ObstacleKind(kind),
+                    bounds=bounds,
+                )
+            )
+    return obstacles, bushes
 
 
 def create_obstacles() -> list[ObstacleState]:
     """依固定配置建立一場比賽專用的牆體狀態。"""
 
-    return [
-        ObstacleState(
-            obstacle_id=index,
-            kind=ObstacleKind(kind),
-            bounds=WorldRect(left, top, width, height),
-        )
-        for index, (kind, left, top, width, height) in enumerate(config.OBSTACLE_LAYOUT)
-    ]
+    obstacles, _ = _build_terrain_states()
+    return obstacles
 
 
 def create_bushes() -> list[BushState]:
     """依固定配置建立一場比賽專用的草叢狀態。"""
 
-    return [
-        BushState(
-            bush_id=index,
-            bounds=WorldRect(left, top, width, height),
-        )
-        for index, (left, top, width, height) in enumerate(config.BUSH_LAYOUT)
-    ]
+    _, bushes = _build_terrain_states()
+    return bushes
 
 
 def build_terrain() -> tuple[list[ObstacleState], list[BushState]]:
     """建立全新的牆體與草叢清單，確保每場比賽狀態互不污染。"""
 
-    return create_obstacles(), create_bushes()
+    return _build_terrain_states()
 
 
 def create_terrain() -> tuple[list[ObstacleState], list[BushState]]:

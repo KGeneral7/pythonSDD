@@ -26,7 +26,7 @@ description: "瞄準線、飛行物速度與角色戰鬥平衡的可執行任務
 
 - [X] T001 [P] 使用 `pvpve_escape/requirements.txt` 與 `pvpve_escape/tests/` 執行虛擬環境版本、Pygame 匯入、既有 `unittest` 與 `compileall` 基線檢查，記錄目前通過數量與命令，不修改既有遊戲規則。
 
-**檢查點**：`.venv` 可使用 Python 3.11.5 與 Pygame，現有 35 項測試維持通過，且新功能尚未改變工作樹中的既有程式。
+**檢查點**：`.venv` 可使用 Python 3.11.5 與 Pygame，初始基線的 35 項測試維持通過，且新功能尚未改變工作樹中的既有程式。
 
 ## 階段 2：基礎建設（所有故事的阻塞前置）
 

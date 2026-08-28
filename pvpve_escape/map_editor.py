@@ -10,6 +10,7 @@ from pathlib import Path
 import pygame
 
 from . import config
+from .terrain import normalize_layout
 
 
 EDITOR_WIDTH = 1400
@@ -18,7 +19,7 @@ SIDEBAR_WIDTH = 320
 MAP_MARGIN = 24
 MAP_TOP = 78
 MAP_BOTTOM = 818
-GRID_SIZE = 20
+GRID_SIZE = config.TERRAIN_CELL_SIZE
 SAVE_PATH = Path(__file__).resolve().parent.parent / "specs" / "004-obstacles-breach-bushes" / "map-layout-draft.json"
 
 TOOL_LABELS = {
@@ -39,9 +40,9 @@ ITEM_COLORS = {
     "bush": (74, 156, 91),
 }
 ITEM_MIN_SIZE = {
-    "thin_wall": (80, 40),
-    "thick_wall": (100, 60),
-    "bush": (100, 80),
+    "thin_wall": (config.TERRAIN_CELL_SIZE, config.TERRAIN_CELL_SIZE),
+    "thick_wall": (config.TERRAIN_CELL_SIZE, config.TERRAIN_CELL_SIZE),
+    "bush": (config.TERRAIN_CELL_SIZE, config.TERRAIN_CELL_SIZE),
 }
 
 
@@ -129,7 +130,15 @@ class MapEditor:
             return []
         try:
             data = json.loads(SAVE_PATH.read_text(encoding="utf-8"))
-            return [LayoutItem.from_dict(item) for item in data.get("items", [])]
+            source_items = [LayoutItem.from_dict(item) for item in data.get("items", [])]
+            normalized = normalize_layout(
+                (item.kind, item.left, item.top, item.width, item.height)
+                for item in source_items
+            )
+            return [
+                LayoutItem(kind, left, top, config.TERRAIN_CELL_SIZE, config.TERRAIN_CELL_SIZE)
+                for kind, left, top in normalized
+            ]
         except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
             self.status_message = f"讀取草稿失敗：{error}"
             return []
@@ -152,6 +161,13 @@ class MapEditor:
         self.status_until = pygame.time.get_ticks() + 4000
 
     def save(self) -> None:
+        self.items = [
+            LayoutItem(kind, left, top, config.TERRAIN_CELL_SIZE, config.TERRAIN_CELL_SIZE)
+            for kind, left, top in normalize_layout(
+                (item.kind, item.left, item.top, item.width, item.height)
+                for item in self.items
+            )
+        ]
         SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "world_width": config.WORLD_WIDTH,
@@ -178,7 +194,8 @@ class MapEditor:
         )
 
     def _snap(self, value: float, maximum: int) -> int:
-        return max(0, min(maximum, int(round(value / GRID_SIZE) * GRID_SIZE)))
+        cell_size = config.TERRAIN_CELL_SIZE
+        return max(0, min(maximum, int(round(value / cell_size) * cell_size)))
 
     def _item_at(self, world_position: tuple[float, float]) -> int | None:
         point = (round(world_position[0]), round(world_position[1]))
@@ -204,26 +221,19 @@ class MapEditor:
         return [name for name, reserved in self._reserved_rects() if item.rect.colliderect(reserved)]
 
     def _make_item(self, start: tuple[float, float], end: tuple[float, float]) -> LayoutItem:
-        left = self._snap(min(start[0], end[0]), config.WORLD_WIDTH)
-        top = self._snap(min(start[1], end[1]), config.WORLD_HEIGHT)
-        right = self._snap(max(start[0], end[0]), config.WORLD_WIDTH)
-        bottom = self._snap(max(start[1], end[1]), config.WORLD_HEIGHT)
-        minimum_width, minimum_height = ITEM_MIN_SIZE[self.tool]
-        width = max(minimum_width, right - left)
-        height = max(minimum_height, bottom - top)
-        if right - left < minimum_width:
-            center_x = self._snap((start[0] + end[0]) / 2, config.WORLD_WIDTH)
-            left = max(0, min(config.WORLD_WIDTH - width, center_x - width // 2))
-        if bottom - top < minimum_height:
-            center_y = self._snap((start[1] + end[1]) / 2, config.WORLD_HEIGHT)
-            top = max(0, min(config.WORLD_HEIGHT - height, center_y - height // 2))
-        return LayoutItem(self.tool, left, top, width, height)
+        cell_size = config.TERRAIN_CELL_SIZE
+        left = self._snap(min(start[0], end[0]), config.WORLD_WIDTH - cell_size)
+        top = self._snap(min(start[1], end[1]), config.WORLD_HEIGHT - cell_size)
+        return LayoutItem(self.tool, left, top, cell_size, cell_size)
 
     def _move_item(self, index: int, world_position: tuple[float, float]) -> None:
         item = self.items[index]
         offset_x, offset_y = self.move_offset or (item.width / 2, item.height / 2)
-        item.left = max(0, min(config.WORLD_WIDTH - item.width, self._snap(world_position[0] - offset_x, config.WORLD_WIDTH)))
-        item.top = max(0, min(config.WORLD_HEIGHT - item.height, self._snap(world_position[1] - offset_y, config.WORLD_HEIGHT)))
+        cell_size = config.TERRAIN_CELL_SIZE
+        item.width = cell_size
+        item.height = cell_size
+        item.left = max(0, min(config.WORLD_WIDTH - cell_size, self._snap(world_position[0] - offset_x, config.WORLD_WIDTH - cell_size)))
+        item.top = max(0, min(config.WORLD_HEIGHT - cell_size, self._snap(world_position[1] - offset_y, config.WORLD_HEIGHT - cell_size)))
 
     def _handle_event(self, event: pygame.event.Event) -> None:
         if event.type == pygame.QUIT:
@@ -314,12 +324,12 @@ class MapEditor:
         pygame.draw.rect(self.screen, config.PANEL_COLOR, (0, 0, EDITOR_WIDTH, MAP_TOP - 12))
         pygame.draw.rect(self.screen, config.PANEL_COLOR, (EDITOR_WIDTH - SIDEBAR_WIDTH, 0, SIDEBAR_WIDTH, EDITOR_HEIGHT))
         pygame.draw.rect(self.screen, config.GROUND_COLOR, self.map_rect)
-        for x in range(0, config.WORLD_WIDTH + 1, 100):
+        for x in range(0, config.WORLD_WIDTH + 1, config.TERRAIN_CELL_SIZE):
             start = self._world_to_screen((x, 0))
             end = self._world_to_screen((x, config.WORLD_HEIGHT))
             color = (65, 82, 87) if x % 500 == 0 else config.GRID_COLOR
             pygame.draw.line(self.screen, color, start, end, 1)
-        for y in range(0, config.WORLD_HEIGHT + 1, 100):
+        for y in range(0, config.WORLD_HEIGHT + 1, config.TERRAIN_CELL_SIZE):
             start = self._world_to_screen((0, y))
             end = self._world_to_screen((config.WORLD_WIDTH, y))
             color = (65, 82, 87) if y % 500 == 0 else config.GRID_COLOR

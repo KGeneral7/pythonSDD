@@ -15,6 +15,8 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 
 > 本輪已完成工作樹保留檢查；發布交付使用 `codex/004-obstacles-breach-bushes`，先前已完成 US1 的地形顯示子任務 T009/T013。本次只納入已確認的程式、測試、SDD 與區域發布技能檔案，`day3/` 保留但不提交。
 
+> **版本範圍**：本任務清單記錄 v0.2.0 的矩形地形實作與驗收。文中 18／27／45 個物件、162/162 測試及 172.23 FPS 均為歷史數據；目前工作樹的 100×100px 單格地圖由 `specs/007-map-asset-integration/` 維護。
+
 ## 階段 1：設定（共用環境）
 
 **目的**：確認既有本地 Pygame 專案與基線狀態，讓後續任務可以辨識新回歸與工作區原有變更。
@@ -132,11 +134,11 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 **目的**：完成文件、全量驗證與手動驗收，確認所有使用者故事整合後仍符合既有專案限制與工作區安全要求。
 
 - [x] T031 將實作後的操作對照、測試命令、牆/草叢/恢復驗收清單與自動化結果、每項量化情境的實際重複次數與已知基線例外更新到 `specs/004-obstacles-breach-bushes/quickstart.md`，並核對 `specs/004-obstacles-breach-bushes/spec.md` 的 FR-001～FR-025 與 SC-001～SC-012。
-- [x] T032 執行 `pvpve_escape/tests` 的完整 unittest 與 `pvpve_escape` 的 `compileall`；目前完整套件 162/162 通過，未發現 GUI 不透明度或其他基線失敗。
+- [x] T032 執行 `pvpve_escape/tests` 的完整 unittest 與 `pvpve_escape` 的 `compileall`；v0.2.0 驗證時完整套件 162/162 通過，未發現 GUI 不透明度或其他基線失敗。
 - [x] T033 執行 `git diff --check` 檢查程式與測試變更空白；並檢閱 `terrain.py`、`world.py`、`rendering.py` 的匯入方向與 `requirements.txt`，確認無循環依賴或新增外部服務/套件。
 - [x] T034 依 `specs/004-obstacles-breach-bushes/quickstart.md` 以 `SDL_VIDEODRIVER=dummy` 啟動 `pvpve_escape.main.run()` 並注入單次 QUIT 完成入口端到端煙霧驗收；互動視覺清單保留供桌面使用者確認。
-- [x] T035 依 `pvpve_escape/__main__.py` 等價的正式更新/繪製鏈，在 1280×720、6 名玩家、12 隻怪物與 45 個固定地形物件場景中預熱 60 幀後量測 600 幀；3.4837 秒完成，平均 172.23 FPS，高於 55 FPS。
-- [ ] T036 在 `specs/004-obstacles-breach-bushes/quickstart.md` 記錄驗證結果後，已將 `codex/004-obstacles-breach-bushes` 推送遠端並建立指向本功能文件的非 draft [PR #4](https://github.com/KGeneral7/pythonSDD/pull/4)，確認最新 head 可合併；PR #4 已以 `2f3383f` 合併至 `main`，並建立 `v0.2.0` annotated tag 與[正式 release](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0)，後續文件同步 PR 亦已合併。本次相關且已合併的遠端開發分支均已刪除，但本地 squash 後提交不是 `main` ancestry 的交付與文件分支經一般 `git branch -d` 檢查遭拒；依規範未使用 `-D`，故本地分支清理仍待安全處理。專案未配置 GitHub Actions，故以本機驗證與 GitHub 可合併狀態作為檢查結果。
+- [x] T035 依 `pvpve_escape/__main__.py` 等價的正式更新/繪製鏈，在 1280×720、6 名玩家、12 隻怪物與 45 個固定地形物件場景中預熱 60 幀後量測 600 幀；v0.2.0 驗證時 3.4837 秒完成，平均 172.23 FPS，高於 55 FPS。
+- [x] T036 在 `specs/004-obstacles-breach-bushes/quickstart.md` 記錄驗證結果後，已將 `codex/004-obstacles-breach-bushes` 推送遠端並建立指向本功能文件的非 draft [PR #4](https://github.com/KGeneral7/pythonSDD/pull/4)，確認最新 head 可合併；PR #4 已以 `2f3383f` 合併至 `main`，並建立 `v0.2.0` annotated tag 與[正式 release](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0)，後續文件同步 PR 亦已合併。本次相關的遠端與本地 `codex/004-obstacles-breach-bushes` 分支目前均已清理；專案未配置 GitHub Actions，故以本機驗證與 GitHub 可合併狀態作為檢查結果。
 
 ---
 
@@ -191,4 +193,4 @@ description: "地圖障礙物、破牆、草叢視線與戰鬥恢復的實作任
 - 每個使用者故事的測試先於實作建立，並在實作前確認會失敗。
 - `pvpve_escape/tests` 的新增測試、既有測試、`compileall`、`git diff --check` 與 `quickstart.md` 手動情境均有結果記錄。
 - 不新增 Pygame 以外依賴，不建立外部 API/服務，不覆蓋現有未提交工作變更。
-- T002 的工作樹保留與 T035 的效能門檻已完成並留下可追蹤記錄；原始 PR #3／`v0.1.0` 為既有基線，T036 的本次 PR、release、合併與文件同步已完成，本次相關且已合併的遠端分支亦已清理；本地 squash 後非 ancestry 分支因一般 `git branch -d` 安全檢查遭拒而保留，未以 `-D` 繞過檢查，因此不能宣稱本地分支生命週期已完成。
+- T002 的工作樹保留與 T035 的效能門檻已完成並留下可追蹤記錄；原始 PR #3／`v0.1.0` 為既有基線，T036 的本次 PR、release、合併、文件同步與相關遠端／本地分支清理均已完成。專案未配置 GitHub Actions，故以本機驗證與 GitHub 可合併狀態作為檢查結果。

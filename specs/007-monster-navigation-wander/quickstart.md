@@ -25,7 +25,7 @@ python -m unittest pvpve_escape.tests.test_game_features pvpve_escape.tests.test
 
 量化驗收必須以全新 `MatchState` 重複執行 20 次：追擊測試每次都要在 10 秒內完成，遊蕩測試中每種怪物每次都要抵達至少兩個不同安全點；測試以 100% 通過作為 SC-001／SC-004 的完成條件。
 
-## 實際驗證結果（2026-08-28）
+## PR #13 原始驗證結果（2026-08-28，地圖素材整合前）
 
 - `python -m unittest pvpve_escape.tests.test_navigation`：15 項通過；包含牆體簽章即時失效、厚牆阻擋、牆角掃掠一致性、無路徑重試與 520px／視線邊界。
 - `python -m unittest pvpve_escape.tests.test_game_features pvpve_escape.tests.test_terrain`：47 項通過；包含 20 次三種類型繞牆追擊、20 次三種類型遊蕩、700px 候選範圍、返營、重生與戰鬥回歸。
@@ -36,6 +36,25 @@ python -m unittest pvpve_escape.tests.test_game_features pvpve_escape.tests.test
 - 平衡與出生點驗證：追獵獸為玩家基礎移速 90%，砲台蟲與重裝巨獸套用同一相對增幅；遊蕩候選可產生接近 700px 的安全半徑；玩家 0 號到所有營地中心與實際怪物出生點均至少 200px。
 
 自動化量化結果：20 次獨立追擊案例中，`CHASER`、`SHOOTER`、`BRUTE` 均於 10 秒內到達互動距離，且每幀位移與牆體碰撞檢查全數通過；20 次獨立遊蕩案例中，三種類型每次均完成至少兩個不同遊蕩點，候選點均在營地中心 700px 內。
+
+## 與 007 地圖素材整合後驗證（2026-08-28，砲台蟲修正前基線）
+
+- 基準為 PR #13／`v0.4.0` 的 `main`；地圖整合後聚焦 `test_navigation`、`test_game_features` 與 `test_terrain` 共 71 項通過。
+- 完整 `python -m unittest discover -s pvpve_escape/tests -p "test_*.py"`：226 項通過，怪物尋路、遊蕩、地形、技能與渲染沒有回歸。
+- `python -m compileall -q pvpve_escape` 與 `git diff --check`：通過。
+- 主迴圈上限仍為 120 FPS；地圖整合固定場景在 120 幀暖機後量測 600 幀，約 6.703 秒、89.51 FPS，量測期間沒有 PNG 載入。
+- PR #13 的 20 次追擊、20 次遊蕩、破牆後改道、厚牆阻擋與三種怪物戰鬥差異仍以原驗證結果為準；本段只補充地圖整合後的回歸結果。
+
+## 砲台蟲牆角修正驗證（2026-08-28）
+
+- T027 回歸案例一：砲台蟲位於 `(820,540)`、目標位於 `(1200,600)`，偏好距離點落入 `(900,500,100,160)` 厚牆；200 次 `0.05` 秒更新後進入 300px 偏好距離容許帶，且每次位置都沒有與牆體重疊。
+- T027 回歸案例二：砲台蟲沿 `(300,400,100,600)` 長牆上方轉角離開導航額外 4px clearance；200 次更新後仍能繼續繞行並進入偏好距離容許帶，沒有卡在 `(300,380)` 牆角。
+- T027 回歸案例三：砲台蟲位於 `(460,470)`、目標位於 `(950,470)`，安全的偏好距離點被四面厚牆封閉；200 次更新後改走目標路線離開封閉區並進入偏好距離容許帶，且沒有牆體重疊。
+- `python -m unittest pvpve_escape.tests.test_navigation pvpve_escape.tests.test_game_features pvpve_escape.tests.test_terrain`：74 項通過。
+- `python -m unittest discover -s pvpve_escape/tests -p "test_*.py"`：229 項通過；包含新增的三個砲台蟲牆角／封閉區回歸案例。
+- `python -m compileall -q pvpve_escape` 與 `git diff --check`：通過。
+- 固定地圖抽樣 20 個偏好距離點落入牆體的案例，200 次更新後失敗數為 0；主迴圈上限仍為 120 FPS。
+- 最新效能量測：120 幀暖機、600 幀、約 8.438 秒、71.11 FPS；量測期間沒有 PNG 載入，且高於 55 FPS 門檻。
 
 ## 純邏輯驗收情境
 
@@ -66,7 +85,7 @@ python -m pvpve_escape
 
 ## 驗收紀錄格式
 
-完成實作後，在 PR 或實作回報中記錄：
+完成實作後，在 PR 或實作回報中記錄；PR #13 的原始結果與地圖整合後的回歸結果分開保存：
 
 - 自動化測試的通過數與執行指令。
 - 20 次獨立牆體兩側追擊測試中三種怪物是否都在 10 秒內達到攻擊距離，以及是否符合 SC-002 的位移上限。

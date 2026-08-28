@@ -6,6 +6,8 @@
 **建立日期**：2026-08-27
 **預定發布版本**：`v0.2.0`
 **狀態**：已發布（[PR #4](https://github.com/KGeneral7/pythonSDD/pull/4) 已 squash merge 至 `main`，合併提交為 `2f3383f`；[v0.2.0 Release](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0) 已發布）
+
+> **版本範圍**：本文件記錄 v0.2.0 的矩形地形實作與驗收。文中 18／27／45 個物件、162/162 測試及 172.23 FPS 均為 v0.2.0 歷史數據；目前工作樹已由 `specs/007-map-asset-integration/` 改用 100×100px 獨立地形格，最新結果以 007 文件為準。
 **輸入**：使用者需求：在 PvPvE 遊戲中加入地圖障礙物、破牆能力、可躲藏且可破壞的草叢，以及戰鬥外生命恢復。
 
 ## 使用者情境與測試
@@ -162,6 +164,6 @@
 
 ## 實作驗證摘要
 
-- `pvpve_escape/tests` 完整 `unittest discover` 為 162/162 通過；地形、瞄準、渲染、觀看者可見性與恢復專用測試均通過。
-- `compileall`、`git diff --check`、dummy SDL 正式入口煙霧測試與 1280×720 固定地形效能測試均通過；45 個固定地形物件在預熱 60 幀後量測 600 幀為 172.23 FPS。
+- v0.2.0 的 `pvpve_escape/tests` 完整 `unittest discover` 為 162/162 通過；地形、瞄準、渲染、觀看者可見性與恢復專用測試均通過。
+- v0.2.0 的 `compileall`、`git diff --check`、dummy SDL 正式入口煙霧測試與 1280×720 固定地形效能測試均通過；45 個固定地形物件在預熱 60 幀後量測 600 幀為 172.23 FPS。
 - 原始功能基線已由 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 與 `v0.1.0` 建立；本次已由 [PR #4](https://github.com/KGeneral7/pythonSDD/pull/4) 合併至 `main`，並以 [v0.2.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0) 正式發布。

@@ -1,5 +1,7 @@
 # 快速開始與驗證指南：PvPvE 中央撤離競技遊戲
 
+> 本文件保留初始 PvPvE 功能在 v0.1.0 階段的驗證紀錄；目前整體回歸數據以最新功能的 quickstart 與驗收文件為準。
+
 ## 前置條件
 
 - Windows PowerShell。

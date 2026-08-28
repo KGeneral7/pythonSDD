@@ -90,7 +90,7 @@
 2. 若完成重生，執行完整狀態重設並進入下一隻。
 3. 取得本次更新共用的固體牆快照；比對並先使舊路徑失效。
 4. 依目標合法性決定 `WANDER`、`CHASE` 或 `RETURN`，設定本次目的地。
-5. 若目的地存在且路徑空、目的地格改變、牆體變動或重算計時器到期，呼叫 `find_grid_path`；若回傳 `None`，保持目前安全位置，將重試計時器設為 `config.MONSTER_NAVIGATION_RETRY_INTERVAL`（0.25 秒）後重試。
+5. 若目的地存在且路徑空、目的地格改變、牆體變動或重算計時器到期，呼叫 `find_grid_path`；若回傳 `None`，保持目前安全位置，將重試計時器設為 `config.MONSTER_NAVIGATION_RETRY_INTERVAL`（0.25 秒）後重試。砲台蟲的偏好距離點若落在牆體或導航 clearance，或偏好點安全但目前沒有可達路徑，先改用目標位置作暫時終點；若首段起點只在額外 clearance 內，允許經實體半徑掃掠確認後朝外離開。
 6. 沿下一個安全節點移動，經 `move_circle_with_obstacles` 與 `clamp_position`；更新 `aim_direction` 只反映實際移動方向。
 7. 只有 `CHASE` 使用既有的攻擊距離與攻擊計時器；`WANDER` 和 `RETURN` 不造成傷害、不發射投射物。
 
@@ -103,3 +103,10 @@
 - `CHASE` 以外 `target_player_id` 為 `None`，且不會呼叫接觸傷害或 `_spawn_monster_projectile`。
 - 牆體簽章包含所有目前固體牆；薄牆摧毀後簽章必定改變，厚牆未摧毀時仍出現在簽章和佔用網格中。
 - 玩家、怪物或牆體資料被測試修改後，下一次更新只讀取目前 `MatchState`，不使用建立比賽時的靜態障礙副本。
+
+## 砲台蟲牆角修正對照（2026-08-28）
+
+- `MonsterState` 不新增欄位；偏好位置是否可用由每次 `CHASE` 更新讀取目前 `match.obstacles` 判定。
+- 偏好位置安全且有路徑時維持原本 300px 距離策略；偏好位置落入牆體、`radius + clearance` 安全區，或 A* 找不到可達路徑時，使用目標位置觸發 A* 繞牆／離開封閉區，避免最近安全格成為永久終點。
+- 導航 clearance 是規劃用保守邊界，不等於實際碰撞邊界。怪物若已由 `move_circle_with_obstacles` 合法停在 clearance 內，首段只能向外離開，且必須通過實體半徑的 `first_obstacle_on_segment` 檢查。
+- 回歸測試覆蓋厚牆內偏好點、多格長牆轉角，以及安全偏好點被四面厚牆封閉；三種情況都不允許牆體重疊或超過 1 秒沒有有效位移。

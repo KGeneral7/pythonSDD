@@ -1287,7 +1287,11 @@ def _update_monster_projectiles(match: MatchState, delta_time: float) -> None:
     match.monster_projectiles = retained
 
 
-def _monster_destination(monster: MonsterState, target: PlayerState) -> Vector2 | None:
+def _monster_destination(
+    monster: MonsterState,
+    target: PlayerState,
+    obstacles: list[ObstacleState] | None = None,
+) -> Vector2 | None:
     """依怪物類型取得追擊目的地；砲台蟲維持既有偏好距離策略。"""
 
     offset = target.position - monster.position
@@ -1306,7 +1310,16 @@ def _monster_destination(monster: MonsterState, target: PlayerState) -> Vector2 
     away_from_target = (monster.position - target.position).normalized()
     if not away_from_target.length():
         away_from_target = Vector2(1.0, 0.0)
-    return target.position + away_from_target * definition.preferred_range
+    preferred_position = target.position + away_from_target * definition.preferred_range
+    if obstacles is not None and not is_navigation_point_safe(
+        preferred_position,
+        monster.radius,
+        obstacles,
+    ):
+        # 偏好距離點若落在牆內，直接把牆後目標當作暫時導航終點，
+        # 讓 A* 先繞過牆角；每次重算仍會重新評估偏好距離，避免卡在最近安全格。
+        return target.position.copy()
+    return preferred_position
 
 
 def _monster_camp_center(monster: MonsterState) -> Vector2:
@@ -1445,6 +1458,42 @@ def _refresh_monster_path(
         else config.MONSTER_NAVIGATION_RETRY_INTERVAL
     )
     return result is not None
+
+
+def _refresh_monster_chase_path(
+    monster: MonsterState,
+    target: PlayerState,
+    destination: Vector2,
+    obstacles: list[ObstacleState],
+    force: bool = False,
+    shared_cache: dict | None = None,
+) -> bool:
+    """建立追擊路徑；砲台蟲偏好點不可達時改走可達的目標路線。"""
+
+    path_ready = _refresh_monster_path(
+        monster,
+        destination,
+        obstacles,
+        force=force,
+        shared_cache=shared_cache,
+    )
+    if path_ready:
+        return True
+    if (
+        monster.monster_type != MonsterType.SHOOTER
+        or destination.distance_to(target.position) <= config.TERRAIN_GEOMETRY_EPSILON
+    ):
+        return False
+
+    # 偏好距離點可能本身安全，卻被牆封在與怪物不同的可達區域；
+    # 目標位置是追擊狀態已有的合法終點，讓 A* 先繞出封閉區域。
+    return _refresh_monster_path(
+        monster,
+        target.position,
+        obstacles,
+        force=True,
+        shared_cache=shared_cache,
+    )
 
 
 def _move_monster_along_path(
@@ -1628,12 +1677,13 @@ def update_monsters(match: MatchState, delta_time: float) -> None:
         target = _update_monster_target_state(match, monster, living_players)
         # 先處理狀態，再決定目的地；因此舊的遊蕩點或追擊路徑不會跨狀態殘留。
         if target is not None and monster.behavior == MonsterBehavior.CHASE:
-            destination = _monster_destination(monster, target)
+            destination = _monster_destination(monster, target, match.obstacles)
             if destination is None:
                 _clear_monster_navigation(monster)
             else:
-                _refresh_monster_path(
+                _refresh_monster_chase_path(
                     monster,
+                    target,
                     destination,
                     match.obstacles,
                     force=terrain_changed,

@@ -4,6 +4,8 @@
 
 本次研究以目前工作區的 pvpve_escape 原始碼、測試與第 004 號功能規格為依據，沒有新增外部服務或第三方技術研究。現有遊戲是 Python 3.11.5、Pygame 2.6.1 的單機桌面應用；比賽狀態全部存在 MatchState 記憶體物件，世界更新集中在 world.py，生命與計時規則集中在 rules.py，畫面集中在 rendering.py。
 
+> **版本範圍**：本研究記錄 v0.2.0 的矩形地形決策與驗證。文中 18／27／45 個物件、162/162 測試及 172.23 FPS 均為歷史數據；目前工作樹的 100×100px 單格地圖由 `specs/007-map-asset-integration/` 維護。
+
 既有程式已提供 Vector2、玩家/怪物圓形碰撞半徑、固定時間步驟、CombatAction、AbilityEffect、apply_damage 與 draw_match。因此本功能可以在既有資料流中增加地形狀態與共用幾何輔助函式，不需要另建遊戲引擎、物理套件、資料庫或網路同步層。
 
 ## 未知項目與研究結果
@@ -144,7 +146,7 @@ update_player_timers 每幀增加兩個計時器；handle_player_death、respawn
 
 **選擇**：新增地形、恢復與可見性專用測試檔，並在既有 test_aiming.py、test_rendering.py、test_rules.py 補上相容性測試。純幾何與恢復用固定數值直接測試；世界整合用 create_match、update_world 和固定 delta_time；渲染用既有 SDL_VIDEODRIVER=dummy 與 pygame.Surface 冒煙測試，逐一檢查完整世界畫布上的 45 個配置矩形，再以正式 1280×720 surface 搭配不同相機位置確認畫面可見。完成後執行 unittest、compileall、git diff --check 與 quickstart 手動驗收。
 
-初始工作樹基線曾受未提交的 GUI、自動瞄準、投射物與戰鬥變更影響；本輪保留既有使用者工作內容，並讓地形無關的既有技能 fixture 使用空障礙物清單以維持測試責任邊界。完成整合後，完整套件實際為 162/162 通過；沒有回復或覆蓋使用者未提交內容。
+初始工作樹基線曾受未提交的 GUI、自動瞄準、投射物與戰鬥變更影響；本輪保留既有使用者工作內容，並讓地形無關的既有技能 fixture 使用空障礙物清單以維持測試責任邊界。v0.2.0 整合完成時，完整套件為 162/162 通過；沒有回復或覆蓋使用者未提交內容。
 
 **理由**：現有測試已經提供固定步驟、無頭畫面與角色/效果夾具，新增功能可直接沿用；不需要安裝新套件或改變啟動方式。
 
@@ -160,6 +162,6 @@ update_player_timers 每幀增加兩個計時器；handle_player_death、respawn
 ## 實作核對結果
 
 - 使用者確認的 2400×1400 地圖快照已保存為 `map-layout-draft.json`，正式 `config.py` 與快照由測試逐項比對。
-- `terrain.py`、正式 `draw_match` 地形層、牆後路徑阻擋、Breacher 終極技能/DASH 破壞、草叢觀看者隱藏與雙計時器恢復均已接入 `update_world`，完整測試 162/162 通過。
-- 地圖更新後以 45 個固定地形物件完成正式更新/繪製效能回歸：預熱 60 幀後量測 600 幀，3.4837 秒、172.23 FPS，高於 55 FPS 門檻。
+- v0.2.0 的 `terrain.py`、正式 `draw_match` 地形層、牆後路徑阻擋、Breacher 終極技能/DASH 破壞、草叢觀看者隱藏與雙計時器恢復均已接入 `update_world`，完整測試 162/162 通過。
+- v0.2.0 地圖更新後以 45 個固定地形物件完成正式更新/繪製效能回歸：預熱 60 幀後量測 600 幀，3.4837 秒、172.23 FPS，高於 55 FPS 門檻。
 - 入口煙霧與固定場景效能驗證已完成；原始外部交付由 [PR #3](https://github.com/KGeneral7/pythonSDD/pull/3) 與 `v0.1.0` 建立，本次地圖更新已由 [PR #4](https://github.com/KGeneral7/pythonSDD/pull/4) 合併至 `main`，並發布 [v0.2.0](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.2.0)。

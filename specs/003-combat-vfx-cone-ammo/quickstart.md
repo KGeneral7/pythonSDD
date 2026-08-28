@@ -92,14 +92,14 @@ git diff --check
 
 ## 實作後驗證記錄
 
-本文件由規劃階段建立；實作完成後應補上測試日期、命令結果與手動驗收結果。若自動化測試與畫面觀察矛盾，先以規則 effect／生命狀態追查，再修正渲染回饋，避免以特效掩蓋碰撞錯誤。
+本文件保留規劃階段與 v0.2.0 實作完成時的驗證結果；若自動化測試與畫面觀察矛盾，先以規則 effect／生命狀態追查，再修正渲染回饋，避免以特效掩蓋碰撞錯誤。
 
 ### 實作前基線（2026-08-27）
 
 - `.\.venv\Scripts\python.exe -m unittest discover -s pvpve_escape\tests -p "test_*.py" -v`：66 個測試通過。
 - `.\.venv\Scripts\python.exe -m compileall -q pvpve_escape`：通過。
 
-### 實作後驗證（2026-08-27）
+### v0.2.0 實作後驗證（2026-08-27）
 
 `.\.venv\Scripts\python.exe -m unittest discover -s pvpve_escape\tests -p "test_*.py" -v`：162 個測試通過。
 - `.\.venv\Scripts\python.exe -m compileall -q pvpve_escape`：通過。

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pygame
 
@@ -32,6 +33,14 @@ _TEXT_FONT_CANDIDATES = (
 _TEXT_FONT_PATH: str | None = None
 _TEXT_FONT_PATH_DISCOVERED = False
 _TEXT_FONT_CACHE: dict[int, pygame.font.Font] = {}
+MAP_ASSET_FILENAMES = {
+    "ground": "ground_tile.png",
+    "thin_wall": "thin_wall_tile.png",
+    "thick_wall": "thick_wall_tile.png",
+    "bush": "bush_tile.png",
+}
+_MAP_ASSET_CACHE: dict[str, pygame.Surface | None] = {}
+_MAP_ASSET_ERRORS: dict[str, str] = {}
 _PRIMARY_EFFECT_LABELS = {
     "breach_cone": "扇形散射",
     "breach_pellet": "散射彈",
@@ -54,6 +63,51 @@ _OVERHEAD_PRIVATE_ROW_Y_OFFSET = -36
 _OVERHEAD_PRIVATE_ROW_HEIGHT = 24
 _OVERHEAD_MAX_AMMO_SEGMENTS = 8
 _DEATH_COUNTDOWN_FONT_SIZE = 56
+
+
+def clear_map_asset_cache() -> None:
+    """清除地圖素材與錯誤狀態，供測試或重新載入使用。"""
+
+    _MAP_ASSET_CACHE.clear()
+    _MAP_ASSET_ERRORS.clear()
+
+
+def map_asset_error(asset_key: str) -> str | None:
+    """回傳單一地圖素材最近一次載入失敗的診斷訊息。"""
+
+    return _MAP_ASSET_ERRORS.get(asset_key)
+
+
+def load_map_asset(asset_key: str) -> pygame.Surface | None:
+    """載入並快取一張 100×100 地圖素材；失敗時回傳 None 觸發備援繪製。"""
+
+    if asset_key in _MAP_ASSET_CACHE:
+        return _MAP_ASSET_CACHE[asset_key]
+
+    filename = MAP_ASSET_FILENAMES.get(asset_key)
+    if filename is None:
+        _MAP_ASSET_ERRORS[asset_key] = "未定義的地圖素材鍵"
+        _MAP_ASSET_CACHE[asset_key] = None
+        return None
+
+    asset_path = Path(__file__).resolve().parent / "assets" / "map" / filename
+    try:
+        asset = pygame.image.load(str(asset_path))
+        expected_size = (config.TERRAIN_CELL_SIZE, config.TERRAIN_CELL_SIZE)
+        if asset.get_size() != expected_size:
+            raise ValueError(f"尺寸為 {asset.get_size()}，預期 {expected_size}")
+        # 沒有 display surface 的離屏測試仍可直接 blit；正式視窗則轉成
+        # 與顯示器相容的 alpha surface，避免每幀重複轉換。
+        if pygame.display.get_init() and pygame.display.get_surface() is not None:
+            asset = asset.convert_alpha()
+    except (OSError, ValueError, TypeError, pygame.error) as error:
+        _MAP_ASSET_ERRORS[asset_key] = f"{asset_path}: {error}"
+        _MAP_ASSET_CACHE[asset_key] = None
+        return None
+
+    _MAP_ASSET_ERRORS.pop(asset_key, None)
+    _MAP_ASSET_CACHE[asset_key] = asset
+    return asset
 
 
 def _supports_traditional_chinese(font_path: str) -> bool:
@@ -1170,6 +1224,7 @@ def draw_terrain(surface: pygame.Surface, match: MatchState) -> None:
 
     camera = match.camera.position
     viewport = surface.get_rect()
+    cell_size = config.TERRAIN_CELL_SIZE
 
     # 草叢先畫，牆再畫；若日後配置邊界重疊，牆的阻擋輪廓仍會保持清楚。
     for bush in match.bushes:
@@ -1178,10 +1233,12 @@ def draw_terrain(surface: pygame.Surface, match: MatchState) -> None:
         bounds = bush.bounds
         rect = _world_rect_to_screen(bounds.left, bounds.top, bounds.width, bounds.height, camera)
         if rect.colliderect(viewport):
-            # Pygame 會自動裁切，但先跳過完全在視窗外的物件可避免每幀
-            # 對遠處地形做不必要的筆觸計算；裁切後的 Rect 仍保留相同顏色
-            # 與邊界，因此相機移動到物件時會在正式畫面立即出現。
-            _draw_bush(surface, rect.clip(viewport))
+            asset = load_map_asset("bush") if (bounds.width, bounds.height) == (cell_size, cell_size) else None
+            if asset is not None:
+                # 傳入完整目的地，讓 Pygame 直接對 surface 邊界自然裁切。
+                surface.blit(asset, rect.topleft)
+            else:
+                _draw_bush(surface, rect)
 
     for obstacle in match.obstacles:
         if not obstacle.solid:
@@ -1189,7 +1246,12 @@ def draw_terrain(surface: pygame.Surface, match: MatchState) -> None:
         bounds = obstacle.bounds
         rect = _world_rect_to_screen(bounds.left, bounds.top, bounds.width, bounds.height, camera)
         if rect.colliderect(viewport):
-            _draw_wall(surface, rect.clip(viewport), obstacle.kind.value)
+            asset = load_map_asset(obstacle.kind.value) if (bounds.width, bounds.height) == (cell_size, cell_size) else None
+            if asset is not None:
+                # 不先縮短 rect；圖片始終維持一個完整的世界格尺寸。
+                surface.blit(asset, rect.topleft)
+            else:
+                _draw_wall(surface, rect, obstacle.kind.value)
 
 
 def draw_world(
@@ -1202,6 +1264,23 @@ def draw_world(
 
     surface.fill(config.GROUND_COLOR)
     camera = match.camera.position
+    cell_size = config.TERRAIN_CELL_SIZE
+    ground_asset = load_map_asset("ground")
+    if ground_asset is not None:
+        first_x = max(0, math.floor(camera.x / cell_size) * cell_size)
+        first_y = max(0, math.floor(camera.y / cell_size) * cell_size)
+        last_x = min(
+            config.WORLD_WIDTH,
+            math.ceil((camera.x + surface.get_width()) / cell_size) * cell_size,
+        )
+        last_y = min(
+            config.WORLD_HEIGHT,
+            math.ceil((camera.y + surface.get_height()) / cell_size) * cell_size,
+        )
+        for world_y in range(first_y, last_y, cell_size):
+            for world_x in range(first_x, last_x, cell_size):
+                screen_position = world_to_screen(Vector2(world_x, world_y), camera)
+                surface.blit(ground_asset, (round(screen_position.x), round(screen_position.y)))
     for x in range(0, config.WORLD_WIDTH + 1, config.GRID_SIZE):
         start = world_to_screen(Vector2(x, 0), camera)
         end = world_to_screen(Vector2(x, config.WORLD_HEIGHT), camera)
