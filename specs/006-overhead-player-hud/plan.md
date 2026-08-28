@@ -144,4 +144,4 @@ pvpve_escape/
 
 ## 發布收尾（2026-08-28）
 
-本次 viewport 修正已完成發布前驗證與人工驗收，並以 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10) squash merge 至 `main`；合併 commit 為 `e9aa3b466ef197bba312d30c11b23dd7703b31fc`，發布版本為 [v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1)。
+本次 viewport 修正已完成發布前驗證與人工驗收，並以 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10) squash merge 至 `main`；功能合併 commit 為 `e9aa3b466ef197bba312d30c11b23dd7703b31fc`，文件收尾再由 [PR #11](https://github.com/KGeneral7/pythonSDD/pull/11) 合併，最終 `main` commit 為 `c23de841f3a405c8bbcd5a14970b750b6ad59f0a`，發布版本為 [v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1)。

@@ -94,4 +94,4 @@
 
 ## 結論
 
-本功能不需要新的外部套件、網路介面、資料庫或新的遊戲狀態欄位。實作集中於既有 `rendering.py`、`rules.py` 與相關測試；規格、計畫與任務已完成，並已依人工驗收結果補入中央死亡倒數及配件冷卻死亡生命週期的文件追蹤；本次追加的 viewport 剔除則保護其他玩家離屏後不殘留頭頂血量條。完整驗證後已由 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10) 合併，並發布 [v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1)。
+本功能不需要新的外部套件、網路介面、資料庫或新的遊戲狀態欄位。實作集中於既有 `rendering.py`、`rules.py` 與相關測試；規格、計畫與任務已完成，並已依人工驗收結果補入中央死亡倒數及配件冷卻死亡生命週期的文件追蹤；本次追加的 viewport 剔除則保護其他玩家離屏後不殘留頭頂血量條。完整驗證後已由 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10) 合併，文件收尾已由 [PR #11](https://github.com/KGeneral7/pythonSDD/pull/11) 合併，最終 `main` commit 為 `c23de841f3a405c8bbcd5a14970b750b6ad59f0a`，並發布 [v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1)。
