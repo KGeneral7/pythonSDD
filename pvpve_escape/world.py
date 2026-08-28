@@ -69,6 +69,7 @@ from .rules import (
     is_visual_only_effect,
     primary_attack_active,
 )
+from .sprites import start_or_refresh_attack_animation, update_player_animation
 
 
 def clamp_position(position: Vector2, radius: float = config.PLAYER_RADIUS) -> Vector2:
@@ -178,6 +179,9 @@ def update_player_movement(
 ) -> None:
     """更新存活玩家位置並以碰撞半徑夾制在世界邊界內。"""
 
+    # 動畫狀態和位置使用同一個輸入與時間步長更新，但不會改寫位置以外
+    # 的遊戲規則欄位；root 或死亡狀態會由動畫函式標記為非移動。
+    update_player_animation(player, move_direction, delta_time)
     if not player.alive or player.root_timer > 0:
         return
     direction = move_direction.normalized()
@@ -496,6 +500,8 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
     owner = _get_target(match, "player", action.owner_id)
     if owner is not None and action_counts_as_attack(action):
         mark_player_attack(owner)
+    if owner is not None and owner.character_id == CharacterId.BREACHER:
+        start_or_refresh_attack_animation(owner)
 
     if action.kind == "breach_cone":
         path_end, path_distance, _, blocker_snapshot = _path_end_for_action(

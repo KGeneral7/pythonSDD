@@ -236,6 +236,7 @@ def handle_player_death(player: PlayerState) -> None:
     player.last_damage_time = 0.0
     player.last_attack_time = 0.0
     player.max_health = player.base_max_health * player.health_passive_multiplier
+    player.animation_state.reset()
     clear_player_effects(player)
 
 
@@ -256,6 +257,7 @@ def respawn_player(player: PlayerState, spawn_position: Vector2) -> None:
     player.last_attack_time = 0.0
     player.primary_cooldown = 0.0
     player.extraction_progress = 0.0
+    player.animation_state.reset()
     # 重生後仍需等到上一個按鍵真正放開，避免死亡期間持續按住的
     # 普攻／大招／配件在重生同幀自動重播。
     player.ability_input_blocked = True
