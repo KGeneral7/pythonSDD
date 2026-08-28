@@ -128,7 +128,7 @@ description: "玩家頭頂 HUD 與個人戰鬥資訊的實作任務"
 - [X] T024 [US2] 在 `pvpve_escape/tests/test_rendering.py` 加入 viewport 邊界回歸測試，重複驗證其他玩家從左、右、上、下離開時不再呼叫頭頂 overlay，且回到視野內後恢復；同時確認本機玩家仍被繪製。
 - [X] T025 [US2] 在 `pvpve_escape/rendering.py` 的 `draw_world()` 於世界座標投影後加入其他玩家頭頂 overlay 的螢幕錨點剔除，跳過 viewport 外玩家的公開資訊但保留既有角色圖形裁切，不改變地形可見性或本機玩家例外。
 - [X] T026 在 `specs/006-overhead-player-hud/` 同步 viewport 可見性需求、資料模型、UI 契約、測試計畫與快速驗證步驟，並確認文件中的 FR/SC/任務對應一致。
-- [X] T027 在完成文件、測試與人工驗收後，提交 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10)、squash merge 至 `main`，並以合併 commit `e9aa3b466ef197bba312d30c11b23dd7703b31fc` 發布 [v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1)。
+- [X] T027 在完成文件、測試與人工驗收後，提交 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10) 並 squash merge 至 `main`；再由 [PR #11](https://github.com/KGeneral7/pythonSDD/pull/11) 完成文件收尾，最終 `main` commit 為 `c23de841f3a405c8bbcd5a14970b750b6ad59f0a`，發布 [v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1)。
 
 **檢查點**：其他玩家離開 viewport 時不再留下血量條或其他頭頂資訊，回到視野內恢復；聚焦渲染測試、完整回歸、編譯、headless 啟動、差異檢查、SDD 分析與新增情境人工確認均已完成。
 

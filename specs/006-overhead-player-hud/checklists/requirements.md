@@ -36,5 +36,5 @@
 
 ## 備註
 
-- 所有檢查項目已依 `spec.md` 完成檢閱；規格、計畫、任務與實作均已完成，viewport 邊界修正已通過人工與自動化驗證，並由 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10) 合併及發布 [v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1)，不重新啟動 `$speckit-clarify` 或 `$speckit-plan`。
+- 所有檢查項目已依 `spec.md` 完成檢閱；規格、計畫、任務與實作均已完成，viewport 邊界修正已通過人工與自動化驗證，並由 [PR #10](https://github.com/KGeneral7/pythonSDD/pull/10) 合併、[PR #11](https://github.com/KGeneral7/pythonSDD/pull/11) 完成文件收尾，最終 `main` commit 為 `c23de841f3a405c8bbcd5a14970b750b6ad59f0a`，發布 [v0.3.1](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.3.1)，不重新啟動 `$speckit-clarify` 或 `$speckit-plan`。
 - 本次規格將其他玩家的名稱／編號視為身份資訊保留；彈藥、配件、大招能量、強化與死亡倒數只屬於本機玩家自己的私人資訊。
