@@ -318,6 +318,31 @@ class DamageEvent:
 
 
 @dataclass
+class PlayerAnimationState:
+    """破陣者的短期視覺狀態，不參與生命、戰鬥或碰撞計算。"""
+
+    facing_direction_index: int = 0
+    moving: bool = False
+    move_elapsed: float = 0.0
+    attack_elapsed: float = 0.0
+    attack_hold: float = 0.0
+
+    @property
+    def attack_active(self) -> bool:
+        return self.attack_hold > 0.0
+
+    def reset(self, *, preserve_direction: bool = True) -> None:
+        """清除上一條命的動作進度；面向可保留以避免重生瞬間跳向右方。"""
+
+        direction_index = self.facing_direction_index if preserve_direction else 0
+        self.facing_direction_index = direction_index
+        self.moving = False
+        self.move_elapsed = 0.0
+        self.attack_elapsed = 0.0
+        self.attack_hold = 0.0
+
+
+@dataclass
 class PlayerState:
     player_id: int
     controller_type: ControllerType
@@ -357,6 +382,7 @@ class PlayerState:
     auto_aim_enabled: bool = True
     # 本功能欄位追加在現有工作樹欄位之後，保留 positional 建構順序。
     last_attack_time: float = 0.0
+    animation_state: PlayerAnimationState = field(default_factory=PlayerAnimationState)
 
     @property
     def alive(self) -> bool:

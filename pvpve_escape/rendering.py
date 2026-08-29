@@ -14,6 +14,7 @@ from .characters import get_character_definition
 from .controllers import InputState
 from .models import AimGuide, AbilityEffect, CharacterId, MatchPhase, MatchState, MonsterType, PlayerState, TacticalId, Vector2
 from .monsters import get_monster_definition
+from .sprites import current_sprite_request, load_breacher_sprite
 from .terrain import is_player_visible_to_viewer
 from .world import world_to_screen
 
@@ -307,13 +308,18 @@ def draw_selection(
             border_width=3,
             radius=10,
         )
-        _draw_role_shape(
+        draw_player_visual(
             surface,
+            None,
             (rect.right - 34, rect.y + 34),
-            17,
             config.ACCENT_COLOR if selected else config.PANEL_BORDER_COLOR,
-            definition.character_id,
-            Vector2(1, 0),
+            character_id=definition.character_id,
+            display_size=(
+                config.BREACHER_SELECTION_SPRITE_SIZE
+                if definition.character_id == CharacterId.BREACHER
+                else None
+            ),
+            force_idle=True,
         )
         draw_text(surface, f"{index + 1}. {definition.display_name}", (rect.x + 14, rect.y + 12), 28, config.ACCENT_COLOR if selected else config.TEXT_COLOR)
         draw_text(surface, definition.primary_kind, (rect.x + 14, rect.y + 46), 21, config.MUTED_TEXT_COLOR)
@@ -520,6 +526,51 @@ def _draw_role_shape(
     pygame.draw.polygon(surface, config.TEXT_COLOR, vertices, 2)
 
 
+def draw_player_visual(
+    surface: pygame.Surface,
+    player: PlayerState | None,
+    center: tuple[int, int],
+    color: tuple[int, int, int],
+    *,
+    character_id: CharacterId | None = None,
+    display_size: int | tuple[int, int] | None = None,
+    force_idle: bool = False,
+) -> None:
+    """以同一入口繪製角色圖片；破陣者素材失效時回到原幾何圖形。"""
+
+    resolved_character_id = character_id
+    if resolved_character_id is None and player is not None:
+        resolved_character_id = player.character_id
+    if resolved_character_id is None:
+        return
+
+    if resolved_character_id == CharacterId.BREACHER:
+        if player is not None:
+            direction_index = player.animation_state.facing_direction_index
+            visual_state, direction_index, frame_index = (
+                ("idle", direction_index, 0)
+                if force_idle
+                else current_sprite_request(player)
+            )
+        else:
+            visual_state, direction_index, frame_index = "idle", 0, 0
+        sprite = load_breacher_sprite(
+            visual_state,
+            direction_index,
+            frame_index,
+            display_size or config.BREACHER_SPRITE_DISPLAY_SIZE,
+        )
+        if sprite is not None:
+            surface.blit(sprite, sprite.get_rect(center=center))
+            return
+
+    direction = player.aim_direction if player is not None else Vector2(1.0, 0.0)
+    fallback_radius = config.PLAYER_DRAW_RADIUS
+    if force_idle:
+        fallback_radius = 8 if player is not None else 17
+    _draw_role_shape(surface, center, fallback_radius, color, resolved_character_id, direction)
+
+
 def _draw_health_bar(
     surface: pygame.Surface,
     center: tuple[int, int],
@@ -684,7 +735,18 @@ def _draw_player_roster(surface: pygame.Surface, match: MatchState, viewer_id: i
         row = index // 2
         center = (896 + column * 188, 544 + row * 37)
         color = config.PLAYER_COLORS[player.player_id % len(config.PLAYER_COLORS)]
-        _draw_role_shape(surface, center, 8, color, player.character_id, player.aim_direction)
+        draw_player_visual(
+            surface,
+            player,
+            center,
+            color,
+            display_size=(
+                config.BREACHER_ROSTER_SPRITE_SIZE
+                if player.character_id == CharacterId.BREACHER
+                else None
+            ),
+            force_idle=True,
+        )
         character = get_character_definition(player.character_id)
         status = "存活" if player.alive else "重生中"
         draw_text(surface, f"{player.player_id} {character.display_name}", (center[0] + 14, center[1] - 10), 15, color)
@@ -1350,10 +1412,7 @@ def draw_world(
             if show_overhead:
                 _draw_player_overlay(surface, player, point, show_private_info=show_private_info)
             continue
-        _draw_role_shape(surface, point, config.PLAYER_DRAW_RADIUS, color, player.character_id, player.aim_direction)
-        if player.player_id == 0:
-            # 額外外框讓人類玩家在地圖、怪物與技能效果中保持容易辨識。
-            pygame.draw.circle(surface, config.ACCENT_COLOR, point, config.PLAYER_DRAW_RADIUS + 5, 2)
+        draw_player_visual(surface, player, point, color)
         aim_end = player.position + player.aim_direction.normalized() * 26
         pygame.draw.line(surface, config.TEXT_COLOR, point, _screen_point(match, aim_end), 2)
         draw_text(surface, str(player.player_id), (point[0] - 4, point[1] - 8), 16, config.PANEL_COLOR)

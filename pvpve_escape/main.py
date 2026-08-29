@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pygame
 
-from . import config, rendering
+from . import config, rendering, sprites
 from .controllers import DeveloperController, HumanController
 from .models import AppScreen, CharacterId, MatchPhase, TacticalId, Vector2
 from .world import create_match, place_dummy_in_extraction, return_dummy_to_spawn, update_match
@@ -31,6 +31,10 @@ class GameApplication:
             list(CharacterId)[self.selected_character_index],
             list(TacticalId)[self.selected_tactical_index],
         )
+        # 每次進入新對局都清掉上一局的顯示尺寸／圖片快取，重新讀取 72 張
+        # 幀並依每張圖的非透明角色外框重新置中，避免沿用舊素材結果。
+        sprites.clear_breacher_sprite_cache()
+        sprites.preload_breacher_sprites(config.BREACHER_SPRITE_DISPLAY_SIZE)
         self.screen_phase = AppScreen.PLAYING
 
     def restart(self) -> None:

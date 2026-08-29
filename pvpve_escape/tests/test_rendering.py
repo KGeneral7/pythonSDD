@@ -250,25 +250,25 @@ class TraditionalChineseFontTests(unittest.TestCase):
 
         self.assertEqual(effect.position.tuple(), cast_position.tuple())
 
-    def test_human_player_marker_is_visible_when_match_starts(self) -> None:
+    def test_human_player_is_rendered_without_a_base_circle_when_match_starts(self) -> None:
         match = create_match()
         surface = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
-
-        rendering.draw_match(surface, match)
 
         player = match.players[0]
         point = (
             round(player.position.x - match.camera.position.x),
             round(player.position.y - match.camera.position.y),
         )
-        player_color = config.PLAYER_COLORS[0]
-        visible_pixels = sum(
-            surface.get_at((x, y))[:3] == player_color
-            for x in range(point[0] - config.PLAYER_DRAW_RADIUS, point[0] + config.PLAYER_DRAW_RADIUS + 1)
-            for y in range(point[1] - config.PLAYER_DRAW_RADIUS, point[1] + config.PLAYER_DRAW_RADIUS + 1)
-            if 0 <= x < surface.get_width() and 0 <= y < surface.get_height()
-        )
-        self.assertGreater(visible_pixels, 20)
+        with patch.object(rendering.pygame.draw, "circle", wraps=pygame.draw.circle) as draw_circle:
+            rendering.draw_match(surface, match)
+
+        player_circle_calls = [
+            call
+            for call in draw_circle.call_args_list
+            if len(call.args) >= 3 and call.args[2] == point
+        ]
+        self.assertEqual(player_circle_calls, [])
+        self.assertTrue(any(surface.get_at((x, y)).a for x in range(point[0] - 20, point[0] + 21) for y in range(point[1] - 20, point[1] + 21)))
 
     def test_all_confirmed_walls_and_bushes_are_rendered_on_the_map_layer(self) -> None:
         match = create_match()
@@ -1038,6 +1038,64 @@ class OverheadRenderingTests(unittest.TestCase):
             lambda: rendering.draw_hud(self.make_surface(), match, viewer_id=1)
         )
         self.assertTrue(any(call[0] == "死亡倒數 4.0s" for call in local_dead_view))
+
+
+class BreacherVisualRenderingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        pygame.init()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        # 只清理可能建立的顯示資源，保留共用字型與 Pygame 初始化。
+        pygame.display.quit()
+
+    @staticmethod
+    def make_surface() -> pygame.Surface:
+        return pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT), pygame.SRCALPHA)
+
+    def test_common_player_visual_selects_attack_over_move(self) -> None:
+        player = create_match().players[0]
+        player.animation_state.facing_direction_index = 2
+        player.animation_state.moving = True
+        player.animation_state.move_elapsed = config.BREACHER_MOVE_FRAME_TIME
+        player.animation_state.attack_elapsed = config.BREACHER_ATTACK_FRAME_TIME * 2
+        player.animation_state.attack_hold = config.BREACHER_ATTACK_FRAME_TIME
+        fake_sprite = pygame.Surface((config.BREACHER_SPRITE_DISPLAY_SIZE,) * 2, pygame.SRCALPHA)
+
+        with patch.object(rendering, "load_breacher_sprite", return_value=fake_sprite) as loader:
+            rendering.draw_player_visual(self.make_surface(), player, (300, 300), config.ACCENT_COLOR)
+
+        loader.assert_called_once_with("attack", 2, 2, config.BREACHER_SPRITE_DISPLAY_SIZE)
+
+    def test_selection_and_roster_use_idle_sprite_but_other_roles_keep_geometry(self) -> None:
+        fake_sprite = pygame.Surface((config.BREACHER_SELECTION_SPRITE_SIZE,) * 2, pygame.SRCALPHA)
+        with patch.object(rendering, "load_breacher_sprite", return_value=fake_sprite) as loader:
+            rendering.draw_selection(self.make_surface(), 0, 0)
+        self.assertTrue(any(call.args[:3] == ("idle", 0, 0) for call in loader.call_args_list))
+
+        match = create_match()
+        with patch.object(rendering, "load_breacher_sprite", return_value=fake_sprite) as loader:
+            rendering._draw_player_roster(self.make_surface(), match)
+        self.assertTrue(any(call.args[0] == "idle" for call in loader.call_args_list))
+
+    def test_unavailable_breacher_sprite_falls_back_to_existing_geometry(self) -> None:
+        player = create_match().players[0]
+        with patch.object(rendering, "load_breacher_sprite", return_value=None):
+            with patch.object(rendering, "_draw_role_shape") as geometry:
+                rendering.draw_player_visual(self.make_surface(), player, (300, 300), config.ACCENT_COLOR)
+        geometry.assert_called_once()
+
+    def test_world_uses_common_visual_entry_for_live_players(self) -> None:
+        match = create_match()
+        match.monsters = []
+        match.bushes = []
+        match.effects = []
+        match.monster_projectiles = []
+        surface = self.make_surface()
+        with patch.object(rendering, "draw_player_visual") as draw_visual:
+            rendering.draw_world(surface, match)
+        self.assertTrue(any(call.args[1] is match.players[0] for call in draw_visual.call_args_list))
 
     def test_qwe_update_selected_tactical_index(self) -> None:
         from pvpve_escape.main import GameApplication
