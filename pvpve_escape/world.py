@@ -500,7 +500,12 @@ def _apply_action(match: MatchState, action: CombatAction) -> None:
     owner = _get_target(match, "player", action.owner_id)
     if owner is not None and action_counts_as_attack(action):
         mark_player_attack(owner)
-    if owner is not None and owner.character_id == CharacterId.BREACHER:
+    # 只有成功建立的像素角色動作才進入共同攻擊動畫；蓄力、冷卻與資源
+    # 仍由角色規則先行判定，這裡只接收已通過規則邊界的 CombatAction。
+    if owner is not None and owner.character_id in {
+        CharacterId.BREACHER,
+        CharacterId.SNIPER,
+    }:
         start_or_refresh_attack_animation(owner)
 
     if action.kind == "breach_cone":

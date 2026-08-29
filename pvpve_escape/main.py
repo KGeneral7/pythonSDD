@@ -31,10 +31,12 @@ class GameApplication:
             list(CharacterId)[self.selected_character_index],
             list(TacticalId)[self.selected_tactical_index],
         )
-        # 每次進入新對局都清掉上一局的顯示尺寸／圖片快取，重新讀取 72 張
-        # 幀並依每張圖的非透明角色外框重新置中，避免沿用舊素材結果。
-        sprites.clear_breacher_sprite_cache()
-        sprites.preload_breacher_sprites(config.BREACHER_SPRITE_DISPLAY_SIZE)
+        # 每次進入新對局都清掉上一局的顯示尺寸／圖片快取，預熱兩個像素
+        # 角色各 72 個來源幀與三種畫面尺寸，避免選角、玩家列表或對局
+        # 繪製期間重新讀檔；其它角色維持幾何繪製。
+        sprites.clear_character_sprite_cache()
+        for character_id in (CharacterId.BREACHER, CharacterId.SNIPER):
+            sprites.preload_character_sprites(character_id)
         self.screen_phase = AppScreen.PLAYING
 
     def restart(self) -> None:

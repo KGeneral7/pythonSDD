@@ -1115,5 +1115,115 @@ class BreacherVisualRenderingTests(unittest.TestCase):
             self.assertEqual(application.selected_tactical_index, expected_index)
 
 
+class SniperVisualRenderingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        pygame.init()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        pygame.display.quit()
+
+    @staticmethod
+    def make_surface() -> pygame.Surface:
+        return pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT), pygame.SRCALPHA)
+
+    def test_common_player_visual_selects_sniper_attack_over_move(self) -> None:
+        player = create_match(CharacterId.SNIPER).players[0]
+        player.animation_state.facing_direction_index = 2
+        player.animation_state.moving = True
+        player.animation_state.move_elapsed = config.SNIPER_MOVE_FRAME_TIME
+        player.animation_state.attack_elapsed = config.SNIPER_ATTACK_FRAME_TIME * 2
+        player.animation_state.attack_hold = config.SNIPER_ATTACK_FRAME_TIME
+        fake_sprite = pygame.Surface((config.SNIPER_SPRITE_DISPLAY_SIZE,) * 2, pygame.SRCALPHA)
+
+        with patch.object(rendering, "load_sniper_sprite", return_value=fake_sprite) as loader:
+            rendering.draw_player_visual(self.make_surface(), player, (300, 300), config.ACCENT_COLOR)
+
+        loader.assert_called_once_with("attack", 2, 2, config.SNIPER_SPRITE_DISPLAY_SIZE)
+
+    def test_sniper_common_visual_uses_each_explicit_direction_without_rotation(self) -> None:
+        player = create_match(CharacterId.SNIPER).players[0]
+        fake_sprite = pygame.Surface((config.SNIPER_SPRITE_DISPLAY_SIZE,) * 2, pygame.SRCALPHA)
+
+        with patch.object(rendering, "load_sniper_sprite", return_value=fake_sprite) as loader:
+            for direction_index in range(8):
+                player.animation_state.facing_direction_index = direction_index
+                rendering.draw_player_visual(self.make_surface(), player, (300, 300), config.ACCENT_COLOR)
+
+        self.assertEqual(loader.call_count, 8)
+        self.assertEqual(
+            [call.args[1] for call in loader.call_args_list],
+            list(range(8)),
+        )
+
+    def test_selection_and_roster_use_sniper_idle_sprite_sizes(self) -> None:
+        selection_sprite = pygame.Surface((config.SNIPER_SELECTION_SPRITE_SIZE,) * 2, pygame.SRCALPHA)
+        with patch.object(rendering, "load_sniper_sprite", return_value=selection_sprite) as loader:
+            rendering.draw_selection(self.make_surface(), 1, 0)
+        self.assertTrue(
+            any(
+                call.args[:3] == ("idle", 0, 0)
+                and call.args[3] == config.SNIPER_SELECTION_SPRITE_SIZE
+                for call in loader.call_args_list
+            )
+        )
+
+        match = create_match(CharacterId.SNIPER)
+        roster_sprite = pygame.Surface((config.SNIPER_ROSTER_SPRITE_SIZE,) * 2, pygame.SRCALPHA)
+        with patch.object(rendering, "load_sniper_sprite", return_value=roster_sprite) as loader:
+            rendering._draw_player_roster(self.make_surface(), match)
+        self.assertTrue(
+            any(
+                call.args[:3] == ("idle", 0, 0)
+                and call.args[3] == config.SNIPER_ROSTER_SPRITE_SIZE
+                for call in loader.call_args_list
+            )
+        )
+
+    def test_unavailable_sniper_sprite_falls_back_to_existing_geometry(self) -> None:
+        player = create_match(CharacterId.SNIPER).players[0]
+        with patch.object(rendering, "load_sniper_sprite", return_value=None):
+            with patch.object(rendering, "_draw_role_shape") as geometry:
+                rendering.draw_player_visual(self.make_surface(), player, (300, 300), config.ACCENT_COLOR)
+        geometry.assert_called_once()
+
+    def test_sniper_fallback_keeps_selection_and_roster_paths_local(self) -> None:
+        with patch.object(rendering, "load_sniper_sprite", return_value=None):
+            with patch.object(rendering, "_draw_role_shape") as geometry:
+                rendering.draw_selection(self.make_surface(), 1, 0)
+                selection_calls = list(geometry.call_args_list)
+
+                match = create_match(CharacterId.SNIPER)
+                rendering._draw_player_roster(self.make_surface(), match)
+                roster_calls = list(geometry.call_args_list)
+
+        self.assertTrue(any(call.args[4] == CharacterId.SNIPER for call in selection_calls))
+        self.assertTrue(any(call.args[4] == CharacterId.SNIPER for call in roster_calls))
+
+    def test_sniper_pixel_visual_does_not_replace_status_information_layers(self) -> None:
+        match = create_match(CharacterId.SNIPER)
+        match.monsters = []
+        match.bushes = []
+        match.effects = []
+        match.monster_projectiles = []
+        player = match.players[0]
+        player.slow_timer = 1.0
+        player.root_timer = 1.0
+        player.shield_timer = 1.0
+        player.shield_remaining = 20.0
+        fake_sprite = pygame.Surface((config.SNIPER_SPRITE_DISPLAY_SIZE,) * 2, pygame.SRCALPHA)
+
+        with patch.object(rendering, "load_sniper_sprite", return_value=fake_sprite):
+            with patch.object(rendering, "_draw_control_status") as control_status:
+                with patch.object(rendering, "_draw_defense_status") as defense_status:
+                    with patch.object(rendering, "_draw_role_shape") as geometry:
+                        rendering.draw_world(self.make_surface(), match)
+
+        self.assertGreater(control_status.call_count, 0)
+        self.assertTrue(any(call.args[1] is player for call in defense_status.call_args_list))
+        self.assertFalse(any(call.args[4] == CharacterId.SNIPER for call in geometry.call_args_list))
+
+
 if __name__ == "__main__":
     unittest.main()
