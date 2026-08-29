@@ -319,7 +319,7 @@ class DamageEvent:
 
 @dataclass
 class PlayerAnimationState:
-    """破陣者的短期視覺狀態，不參與生命、戰鬥或碰撞計算。"""
+    """玩家角色共用的短期視覺狀態，不參與生命、戰鬥或碰撞計算。"""
 
     facing_direction_index: int = 0
     moving: bool = False

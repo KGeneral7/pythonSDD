@@ -14,7 +14,7 @@ from .characters import get_character_definition
 from .controllers import InputState
 from .models import AimGuide, AbilityEffect, CharacterId, MatchPhase, MatchState, MonsterType, PlayerState, TacticalId, Vector2
 from .monsters import get_monster_definition
-from .sprites import current_sprite_request, load_breacher_sprite
+from .sprites import current_sprite_request, load_breacher_sprite, load_sniper_sprite
 from .terrain import is_player_visible_to_viewer
 from .world import world_to_screen
 
@@ -317,6 +317,8 @@ def draw_selection(
             display_size=(
                 config.BREACHER_SELECTION_SPRITE_SIZE
                 if definition.character_id == CharacterId.BREACHER
+                else config.SNIPER_SELECTION_SPRITE_SIZE
+                if definition.character_id == CharacterId.SNIPER
                 else None
             ),
             force_idle=True,
@@ -536,7 +538,7 @@ def draw_player_visual(
     display_size: int | tuple[int, int] | None = None,
     force_idle: bool = False,
 ) -> None:
-    """以同一入口繪製角色圖片；破陣者素材失效時回到原幾何圖形。"""
+    """以同一入口繪製像素角色；素材失效時回到原幾何圖形。"""
 
     resolved_character_id = character_id
     if resolved_character_id is None and player is not None:
@@ -544,7 +546,7 @@ def draw_player_visual(
     if resolved_character_id is None:
         return
 
-    if resolved_character_id == CharacterId.BREACHER:
+    if resolved_character_id in {CharacterId.BREACHER, CharacterId.SNIPER}:
         if player is not None:
             direction_index = player.animation_state.facing_direction_index
             visual_state, direction_index, frame_index = (
@@ -554,12 +556,22 @@ def draw_player_visual(
             )
         else:
             visual_state, direction_index, frame_index = "idle", 0, 0
-        sprite = load_breacher_sprite(
-            visual_state,
-            direction_index,
-            frame_index,
-            display_size or config.BREACHER_SPRITE_DISPLAY_SIZE,
-        )
+        if resolved_character_id == CharacterId.BREACHER:
+            sprite = load_breacher_sprite(
+                visual_state,
+                direction_index,
+                frame_index,
+                display_size or config.BREACHER_SPRITE_DISPLAY_SIZE,
+            )
+        else:
+            # 方向素材已由角色製作技能逐張提供；執行期不旋轉或鏡像，
+            # 上方三個方向才能保留狙擊者背面與槍械接點語意。
+            sprite = load_sniper_sprite(
+                visual_state,
+                direction_index,
+                frame_index,
+                display_size or config.SNIPER_SPRITE_DISPLAY_SIZE,
+            )
         if sprite is not None:
             surface.blit(sprite, sprite.get_rect(center=center))
             return
@@ -743,6 +755,8 @@ def _draw_player_roster(surface: pygame.Surface, match: MatchState, viewer_id: i
             display_size=(
                 config.BREACHER_ROSTER_SPRITE_SIZE
                 if player.character_id == CharacterId.BREACHER
+                else config.SNIPER_ROSTER_SPRITE_SIZE
+                if player.character_id == CharacterId.SNIPER
                 else None
             ),
             force_idle=True,

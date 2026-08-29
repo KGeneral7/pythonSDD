@@ -34,6 +34,24 @@ class GameApplicationFlowTests(unittest.TestCase):
 
         self.assertIsNone(application.match)
 
+    def test_start_match_preloads_both_pixel_roles_using_registered_display_sizes(self) -> None:
+        application = GameApplication.__new__(GameApplication)
+        application.selected_character_index = 1
+        application.selected_tactical_index = 0
+        application.screen_phase = None
+
+        with patch("pvpve_escape.main.sprites.clear_character_sprite_cache") as clear_cache:
+            with patch("pvpve_escape.main.sprites.preload_character_sprites", return_value=72) as preload:
+                application.start_match()
+
+        clear_cache.assert_called_once_with()
+        self.assertEqual(preload.call_count, 2)
+        self.assertEqual(
+            [call.args[0] for call in preload.call_args_list],
+            [CharacterId.BREACHER, CharacterId.SNIPER],
+        )
+        self.assertTrue(all(call.kwargs == {} for call in preload.call_args_list))
+
     def test_restart_resets_controller_state_and_new_match_attack_state(self) -> None:
         application = GameApplication()
         application.start_match()
