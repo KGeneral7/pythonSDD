@@ -324,8 +324,10 @@ git diff --check
 - 2026-08-29｜本地 code review：發現角色規格雖已保存 `preload_display_sizes`，主迴圈與通用預載入入口仍重複寫死 `(50, 54, 24)`，可能在尺寸設定變更後漏暖身正確顯示尺寸；已改為省略參數時讀取各角色規格，並新增回歸測試確認規格值會被採用。這是唯一需要直接修正的問題，未發現角色動畫、遊戲規則、fallback 或效能的其他必要修正。
 - 2026-08-29｜code review 修正後回歸：`.\.venv\Scripts\python.exe -m unittest pvpve_escape.tests.test_main pvpve_escape.tests.test_sprite_animation -q` 共 32 項通過；完整 `unittest discover` 共 267 項通過，地圖平均 `95.75 FPS`、精靈模擬平均 `6532.95 FPS`、最大單幀間隔 `0.23 ms`、量測期間圖片讀取 `0` 次；`compileall` 與 `git diff --check` 亦通過。
 - 2026-08-29｜人工驗收：使用者已完成選角、對局、八方向、移動／攻擊動畫、技能、死亡／重生、玩家列表與其他角色／怪物情境測試，確認沒有問題。
-- 2026-08-29｜發布前文件檢查：重新檢查 `spec.md`、`plan.md`、`tasks.md`、`research.md`、`data-model.md`、`quickstart.md`、`checklists/requirements.md`、憲章與角色製作技能；SDD 跨文件分析確認需求覆蓋、任務依賴、API、角色本體比例規則與驗證紀錄一致，未發現待修正問題。`T031` 保留未完成，等待 PR 合併與發布後補記實際連結及提交資訊。
-- 2026-08-29｜PR 交付：功能分支已推送並建立正式 [PR #17](https://github.com/KGeneral7/pythonSDD/pull/17)，目標分支為 `main`，head commit 為 `1fe0ece3e95294324d965dd25ce3f5712f2ff846`；`T031` 仍保留未完成，等待 PR 合併、發布與分支清理後補記最終結果。
+- 2026-08-29｜發布前文件檢查（檢查當下紀錄）：重新檢查 `spec.md`、`plan.md`、`tasks.md`、`research.md`、`data-model.md`、`quickstart.md`、`checklists/requirements.md`、憲章與角色製作技能；SDD 跨文件分析確認需求覆蓋、任務依賴、API、角色本體比例規則與驗證紀錄一致，未發現待修正問題。當時 PR 尚未合併，因此發布資訊由後續紀錄補上。
+- 2026-08-29｜PR 交付（合併前紀錄）：功能分支已推送並建立正式 [PR #17](https://github.com/KGeneral7/pythonSDD/pull/17)，目標分支為 `main`，head commit 為 `1fe0ece3e95294324d965dd25ce3f5712f2ff846`；當時依憲章保留功能分支，最終合併、發布與清理結果見下方發布完成紀錄。
+- 2026-08-29｜發布完成： [PR #17](https://github.com/KGeneral7/pythonSDD/pull/17) 已 squash merge 至 `main`，合併提交為 `39bada5646683a3d7a7e89fa5ced093068789909`；annotated tag `v0.7.0` 已推送並發布為 [GitHub Release](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.7.0)，發布頁標記為 Latest；遠端與本地 `009-sniper-sprite-animation` 功能分支已清理，`day3/` 與 `sample.png` 已保留且未納入提交。
+- 2026-08-29｜發布後 SDD 分析：重新執行跨文件一致性檢查，確認 14/14 功能需求、8/8 成功標準、31/31 任務均有覆蓋且無未完成任務；PR、合併提交、v0.7.0 Release 與分支清理紀錄一致，需求檢查清單未勾選項為 0，未發現需要修正的文件問題。
 
 ## 手動端到端驗證
 

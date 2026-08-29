@@ -4,7 +4,7 @@
 
 **建立日期**：2026-08-29
 
-**狀態**：已完成驗證，待 PR 合併與發布
+**狀態**：已完成並發布（[PR #17](https://github.com/KGeneral7/pythonSDD/pull/17) 已 squash merge 至 `main`，合併提交為 `39bada5646683a3d7a7e89fa5ced093068789909`；[v0.7.0 Release](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.7.0) 已發布）
 
 **輸入**：使用者需求：根據既定方案，使用角色製作技能為 `pvpve_escape` 的狙擊者製作偵察狙擊兵 Q 版像素外觀，完整接入遊戲並評估與啟動 SDD。
 

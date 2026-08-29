@@ -108,7 +108,13 @@
 - [X] T028 執行 `specs/009-sniper-sprite-animation/quickstart.md` 的手動端到端驗收：選角、八方向與分界角、背面方向、移動、蓄力射擊、無彈藥／冷卻中、戰術／終極技能、死亡／重生、玩家列表、缺圖 fallback、其他角色／怪物，並將結果記錄至該文件。
 - [X] T029 在 `pvpve_escape/tests/test_sprite_performance.py` 新增並執行 headless 10 秒狙擊者繪製效能測試：先預載入兩個像素角色各 72 個來源幀及三種顯示尺寸，再記錄平均 FPS、最大單幀間隔與 `pygame.image.load` 呼叫次數；要求平均至少 60 FPS、最大單幀間隔不超過 100 毫秒、量測期間讀檔次數為 0，並將實際結果記錄至 `specs/009-sniper-sprite-animation/quickstart.md` 的「驗證紀錄」。
 - [X] T030 檢查 `git status`、`git diff` 與 `specs/009-sniper-sprite-animation/` 內容，確認交付只包含狙擊者資產、必要程式、測試與 SDD 文件；保留但不納入 `day3/` 與 `sample.png`。
-- [ ] T031 在 T027～T030 全部通過後，將 `009-sniper-sprite-animation` 功能分支推送至遠端並建立 PR，PR 說明指向 `specs/009-sniper-sprite-animation/` 並附上驗證結果；在 PR 合併前保留本地與遠端功能分支，合併後才依憲章清理分支。
+- [X] T031 在 T027～T030 全部通過後，將 `009-sniper-sprite-animation` 功能分支推送至遠端並建立 PR，PR 說明指向 `specs/009-sniper-sprite-animation/` 並附上驗證結果；在 PR 合併前保留本地與遠端功能分支，合併後才依憲章清理分支。
+
+### T031 完成紀錄
+
+- [X] 已建立並合併 [PR #17](https://github.com/KGeneral7/pythonSDD/pull/17) 至 `main`，squash merge 提交為 `39bada5646683a3d7a7e89fa5ced093068789909`。
+- [X] 已建立並發布 [v0.7.0 Release](https://github.com/KGeneral7/pythonSDD/releases/tag/v0.7.0)，版本標籤指向上述合併提交。
+- [X] 已刪除遠端與本地 `009-sniper-sprite-animation` 功能分支；未追蹤的 `day3/` 與 `sample.png` 保留且未納入提交。
 
 ## 依賴與執行順序
 
