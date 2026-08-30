@@ -64,6 +64,6 @@
 - review 範圍涵蓋核心規則／固定 update 順序、Canvas `dt` cap 與 frame sampler、輸入 focus／blur、Canvas 外 pointerup／pointercancel、asset fallback、public/private HUD view、結果頁停止更新與 restart/reset 邊界。
 - 發現並修正一項輸入生命週期問題：視窗按鍵原先未確認 Canvas focus，且 Canvas 外 mouseup 可能遺失；現在已限制鍵盤焦點、進入對局自動聚焦 Canvas，並加入 pointerup／pointercancel 清理。相對應的型別、133 個自動測試、lint、build 與 `git diff --check` 均已重跑通過。
 - 這些本地 review 修正已建立 Sites version 7 saved version 並完成 production deployment；Sites source commit、封存 archive 與 saved version provenance 一致。
-- 父專案 SDD 與發布紀錄已推送至功能分支，並建立 [PR #18](https://github.com/KGeneral7/pythonSDD/pull/18)；PR head 為文件 commit `9bd1050`。
+- 父專案 SDD 與發布紀錄已推送至功能分支，並建立 [PR #18](https://github.com/KGeneral7/pythonSDD/pull/18)；最終 PR head 為 `b3fe7ba34c8acca62431d098ebc51588263291c8`，已 squash merge 為 `e25ad21a138f81920b0dd6f75f26bfcce0aa8c0d`，並發布 `v0.8.0`。
 - 未提交或覆蓋父專案的 Python/Pygame 資料；`day3/` 與 `sample.png` 等原有未追蹤使用者檔案仍保留在工作區。
 - review 結論不把未登入的 production owner 流程或跨硬體 60 秒效能量測誤記為已完成；兩者已列為補測限制。
