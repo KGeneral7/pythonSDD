@@ -165,7 +165,7 @@ description: "PvPvE Escape 瀏覽器版的可執行任務清單"
 - [X] T061 建立 Sites 專案、設定 owner-only/private access policy，將 Sites 要求的 project id 與支援 capabilities 保存到 `pvpve_escape_web/.openai/hosting.json`，並把實際 slug 與 access policy 記錄到 `specs/010-pvpve-escape-web/deployment.md`
 - [X] T062 發布 `pvpve_escape_web/` 的 private production Sites 版本，並在 `specs/010-pvpve-escape-web/deployment.md` 記錄實際 URL、部署版本、授權方式、權限狀態與部署時間
 - [ ] T063 在私人 production URL 以已授權擁有者與未授權瀏覽器 session 分別重跑 `specs/010-pvpve-escape-web/quickstart.md` 的啟動、選角、戰鬥、resize、資源 fallback、撤離、結果、重新整理流程，將 smoke test 結果補入 `specs/010-pvpve-escape-web/verification.md`
-- [ ] T064 在 `specs/010-pvpve-escape-web/deployment.md` 與 `specs/010-pvpve-escape-web/verification.md` 完成本地 code review 摘要，將 `010-pvpve-escape-web` 分支推送至遠端並建立指向 `specs/010-pvpve-escape-web/` 的 PR；PR 合併前保留本地／遠端分支，只有確認合併後才清理
+- [X] T064 在 `specs/010-pvpve-escape-web/deployment.md` 與 `specs/010-pvpve-escape-web/verification.md` 完成本地 code review 摘要，將 `010-pvpve-escape-web` 分支推送至遠端並建立指向 `specs/010-pvpve-escape-web/` 的 PR；PR 合併前保留本地／遠端分支，只有確認合併後才清理
 
 ## Phase 9：原版 1:1 parity closure
 

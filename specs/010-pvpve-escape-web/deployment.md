@@ -49,7 +49,8 @@ Sites 回報 current live URL 與 version 7 一致，站點狀態為 `active`。
 
 ## 父專案 PR 狀態
 
-- Sites source 已獨立推送並完成 version 7 production deployment；父專案的 `010-pvpve-escape-web` 文件變更接著依本次 release workflow 推送並建立 PR。
+- Sites source 已獨立推送並完成 version 7 production deployment；父專案的 `010-pvpve-escape-web` 文件變更已推送，並建立 [PR #18](https://github.com/KGeneral7/pythonSDD/pull/18)。
+- PR #18 目標為 `main`、head commit 為 `9bd1050`；依憲章規則，只有遠端確認合併後才清理功能分支。
 - 使用者已確認人工測試完成且沒有問題；本地 code review、Sites 發布與父專案文件提交均保留既有 Python/Pygame 與未追蹤使用者檔案。
 
 ## 回滾
